@@ -1,0 +1,35 @@
+# Rust build output
+/target/
+**/*.rs.bk
+
+# Cargo
+# Keep Cargo.lock committed for binaries/apps (recommended)
+# Uncomment the next line if this were a library package
+# Cargo.lock
+
+# OS/system files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor/IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Logs and temp
+*.log
+*.tmp
+~$*
+
+# Windows executables and symbols (usually under target/, but ignore anywhere just in case)
+*.exe
+*.dll
+*.pdb
+
+# Raylib generated caches (none specific by default)
+# Add entries here if you generate assets at build/runtime
+
+# Optional: ignore screenshots or exports
+# screenshots/
+# exports/
