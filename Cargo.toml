@@ -1,7 +1,13 @@
 [package]
-name = "spaceship"
+name = "planetlab"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-raylib = "5.0"
+minifb = "0.25"
+glam   = "0.27"
+anyhow = "1"
+
+[[bin]]
+name = "planetlab"
+path = "planetLab/src/main.rs"
