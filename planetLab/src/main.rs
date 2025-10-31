@@ -96,16 +96,16 @@ fn main() -> anyhow::Result<()> {
                 let mx = pos.x + orbit_r * (t*speed).cos();
                 let mz = pos.z + orbit_r * (t*speed).sin();
                 let moon_model = Mat4::from_translation(Vec3::new(mx, 0.0, mz)) * Mat4::from_scale(Vec3::splat(0.25));
-                let moon_su = ShaderUniforms { time: t, mode: 0, light_dir: Vec3::new(0.3,0.6,0.7).normalize(), camera_pos: eye, ring_inner:0.0, ring_outer:0.0, ring_enabled:false };
+                let moon_su = ShaderUniforms { time: t, mode: 99, light_dir: Vec3::new(0.3,0.6,0.7).normalize(), camera_pos: eye, ring_inner:0.0, ring_outer:0.0, ring_enabled:false };
                 draw_mesh(&mut fb, &sphere, moon_model, &cam, moon_su);
             }
 
-            // ring: only visible for planet index 1 (gas giant) if toggled
+            // anillos: gas giant (i==1) y sci-fi (i==2)
             if show_rings && i == 1 {
-                // flatten sphere on Y and mask by radial range in shader
-                let ring_model = Mat4::from_translation(pos) * Mat4::from_scale(Vec3::new(1.6, 0.02, 1.6));
-                let ring_su = ShaderUniforms { time: t, mode: 1, light_dir: Vec3::new(0.3,0.6,0.7).normalize(), camera_pos: eye, ring_inner: 0.9, ring_outer: 1.6, ring_enabled: true };
-                draw_mesh(&mut fb, &sphere, ring_model, &cam, ring_su);
+                // solo el gigante gaseoso tiene anillo
+                let ring_model1 = Mat4::from_translation(pos) * Mat4::from_scale(Vec3::new(2.0, 0.01, 2.0));
+                let ring_su1 = ShaderUniforms { time: t, mode: 1, light_dir: Vec3::new(0.3,0.6,0.7).normalize(), camera_pos: eye, ring_inner: 0.9, ring_outer: 1.6, ring_enabled: true };
+                draw_mesh(&mut fb, &sphere, ring_model1, &cam, ring_su1);
             }
         }
 
