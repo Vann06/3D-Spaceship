@@ -1,4 +1,4 @@
-use glam::{Vec3, Vec4};
+use glam::Vec3; // Removed unused Vec4 after planet cleanup
 
 #[derive(Clone)]
 pub struct Mesh {

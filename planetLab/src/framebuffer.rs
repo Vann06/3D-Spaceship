@@ -1,4 +1,4 @@
-use glam::UVec2;
+// Removed unused import (UVec2) after planet code cleanup.
 
 pub struct Framebuffer {
     pub w: usize,
@@ -28,5 +28,5 @@ impl Framebuffer {
             }
         }
     }
-    pub fn size(&self) -> UVec2 { UVec2::new(self.w as u32, self.h as u32) }
+    // size() removed; reintroduce if interactive UI needs dimensions
 }
