@@ -30,19 +30,12 @@ Características: gradiente triple turquesa→lima→púrpura, granulado fbm mul
 | (interno) emission | f32 | Intensidad lumínica local | Todos (varía) |
 
 ### Funciones Clave
-- fbm(x,y,oct): ruido fractal 2D para variaciones multi-escala.
-- lighting(n,view): retorno (lambert, rim) para sombreado base y halo.
-- ring logic: mezcla de bandas radiales + fbm + variación angular (sin) para color dinámico.
-- Pulsos: sin(time * factor) para bioluminiscencia o calor.
-| Uniform         | Tipo   | Descripción                        | Ejemplo                |
-|-----------------|--------|------------------------------------|------------------------|
-| time            | float  | Tiempo de animación (segundos)     | 12.5                   |
-| mode            | u32    | Tipo de planeta (0=rocoso, 1=gas, 2=alien) | 1          |
-| light_dir       | Vec3   | Dirección de luz normalizada       | (0.3, 0.6, 0.7)        |
-| camera_pos      | Vec3   | Posición de la cámara              | (0.0, 0.0, 8.0)        |
-| ring_inner      | float  | Radio interno del anillo           | 1.2                    |
-| ring_outer      | float  | Radio externo del anillo           | 2.2                    |
-| ring_enabled    | bool   | Mostrar anillo                     | true                   |
+| Función | Descripción | Planetas que lo usan |
+|---------|-------------|----------------------|
+| fbm(x,y,oct) | Ruido fractal 2D multi-octava para variaciones multi-escala y detalle procedimental | Terreno, bandas, lava flow, hielo, aurora |
+| lighting(n,view) | Calcula (lambert, rim) — lambert para iluminación difusa y 'rim' para halo de borde — usado en sombreado base | Todos |
+| ring logic | Mezcla de bandas radiales + fbm + variación angular (seno sobre el ángulo + tiempo) para colorear el anillo dinámicamente | Gaseoso (Key 2) |
+| Pulsos (sin(time * factor)) | Genera señales oscilantes para bioluminiscencia, pulsos térmicos y variaciones rítmicas | Rocky, Alien, Lava, Ice |
 
 ## Controles
 - 1..5: Cambia planeta activo (una sola esfera)
@@ -66,8 +59,8 @@ cargo run --bin planetlab --release
 ## Capturas
 | Planeta | Imagen |
 |---------|--------|
-| Rocoso Bio-Lum | ![rocky](docs/rocky.png) |
-| Gaseoso Turq-Lima | ![gas](docs/gas.png) |
-| Alien Verde-Púrpura | ![alien](docs/alien.gif) |
-| Lava Incandescente | ![lava](docs/lava.png) |
-| Hielo Cristal | ![ice](docs/ice.png) |
+| Rocoso Bio-Lum | ![rocky](planetLab/docs/rocky.png) |
+| Gaseoso Turq-Lima | ![gas](planetLab/docs/gas.png) |
+| Alien Verde-Púrpura | ![alien](planetLab/docs/alien.gif) |
+| Lava Incandescente | ![lava](planetLab/docs/lava.png) |
+| Hielo Cristal | ![ice](planetLab/docs/ice.png) |
