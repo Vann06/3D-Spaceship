@@ -47,7 +47,7 @@ Características: gradiente triple turquesa→lima→púrpura, granulado fbm mul
 
 ## Ejecución
 ```powershell
-cargo run --bin planetlab --release
+cargo run --bin planetlab 
 ```
 
 ## Notas
