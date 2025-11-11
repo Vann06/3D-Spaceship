@@ -4,7 +4,7 @@
 Capturas
 | Elemento | Imagen |
 |----------|--------|
-| Estrella Procedural | ![star](planetLab/docs/star.gif) |
+| Estrella Procedural | ![star](planetLab/docs/sol.gif) |
 
 
 Características clave
@@ -91,8 +91,8 @@ Diseñar una estrella o “sol” utilizando shaders y funciones de ruido (Perli
 - W / S: Aumentar/Reducir temperatura (temp_kelvin)
 - A / D: Reducir/Aumentar velocidad (speed)
 
-<!-- Inserta un video local (MP4) -->
-<video src="planetLab/docs/star.mp4" controls autoplay loop muted playsinline style="max-width:100%; height:auto;">
-  Tu navegador no soporta la etiqueta <code>video</code>. <a href="planetLab/docs/star.mp4">Descarga el video</a>.
+
+<video src="planetLab/docs/sol.mp4" controls autoplay loop muted playsinline style="max-width:100%; height:auto;">
+	Tu navegador no soporta la etiqueta <code>video</code>. <a href="planetLab/docs/sol.mp4">Descarga el video</a>.
 </video>
 
