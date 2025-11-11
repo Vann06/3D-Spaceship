@@ -1,6 +1,8 @@
 # StarLab — Estrella Sol
 
 
+[![Ver video (YouTube)](https://img.youtube.com/vi/ry4oAwbALA8/hqdefault.jpg)](https://youtu.be/ry4oAwbALA8)
+
 Capturas
 | Elemento | Imagen |
 |----------|--------|
