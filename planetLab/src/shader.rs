@@ -11,7 +11,7 @@ pub struct Uniforms {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum Mode { Rocky = 0, Gas = 1, Scifi = 2 }
+pub enum Mode { Rocky = 0, Gas = 1, Alien = 2, Lava = 3, Ice = 4 }
 
 #[derive(Copy, Clone, Default)]
 pub struct ShaderUniforms {
@@ -81,10 +81,11 @@ pub fn rocky_planet(fragment: Fragment, u: ShaderUniforms) -> Vec3 {
     let strata = (lat*40.0 + lon*20.0).sin() * 0.5 + 0.5;
     let mineral = fbm(lon*16.0 + 0.5*u.time, lat*16.0, 3);
 
-    let ocean = Vec3::new(0.05,0.12,0.30);
-    let land  = Vec3::new(0.24,0.32,0.12);
-    let desert= Vec3::new(0.75,0.62,0.35);
-    let icec  = Vec3::new(0.90,0.95,1.00);
+    // Nueva paleta: océanos turquesa, vegetación verde musgo, bioluminiscencia púrpura sutil
+    let ocean = Vec3::new(0.03,0.40,0.38);      // teal profundo
+    let land  = Vec3::new(0.16,0.45,0.12);      // verde musgo
+    let desert= Vec3::new(0.60,0.55,0.25);      // arena apagada
+    let icec  = Vec3::new(0.85,0.95,1.00);      // hielo azulado
     let strata_col = Vec3::new(0.35,0.28,0.18).lerp(Vec3::new(0.55,0.45,0.30), strata);
     let mineral_col = Vec3::new(0.7,0.6,0.8).lerp(Vec3::new(0.4,0.3,0.5), mineral);
 
@@ -96,8 +97,11 @@ pub fn rocky_planet(fragment: Fragment, u: ShaderUniforms) -> Vec3 {
     base *= 0.9 + 0.2*rough;
 
     // Subtle emission for realism
-    let emission = 0.08 * (strata * mineral * land_mask);
-    let mut col = base * (0.22 + 0.78*lam) + Vec3::splat(1.0) * (0.13*rim) + Vec3::splat(emission);
+    // Bioluminiscencia: zonas minerales + latitudes altas pulsando con el tiempo
+    let pulse = (u.time*0.6).sin()*0.5+0.5;
+    let emission = 0.10 * (strata * mineral * land_mask) + 0.08 * pulse * ice;
+    let glow_color = Vec3::new(0.55,0.25,0.65); // púrpura tenue
+    let mut col = base * (0.25 + 0.75*lam) + glow_color * emission + Vec3::splat(1.0)*(0.10*rim);
     // Si es luna, añade brillo blanco (emisión)
     if u.mode == 99 {
         col += Vec3::splat(0.7); // brillo blanco extra
@@ -114,8 +118,9 @@ pub fn gas_giant(fragment: Fragment, u: ShaderUniforms) -> Vec3 {
     let warp = fbm(lon*2.0 + u.time*0.2, lat*4.0, 4);
     let band = (lat*18.0 + 0.15*warp).sin();
     let k = 0.5 + 0.5*band;
-    let band_a = Vec3::new(0.85,0.60,0.40);
-    let band_b = Vec3::new(0.95,0.85,0.60);
+    // Paleta nueva: turquesa → lima con vetas púrpura
+    let band_a = Vec3::new(0.10,0.65,0.55); // turquesa
+    let band_b = Vec3::new(0.70,0.95,0.30); // lima clara
     let mut base = band_a.lerp(band_b, k);
 
     // eye of storm
@@ -123,7 +128,7 @@ pub fn gas_giant(fragment: Fragment, u: ShaderUniforms) -> Vec3 {
     let lon0 = -0.7 + 0.15*(0.3*u.time).sin();
     let d = ((lat - lat0).powf(2.0) + (lon - lon0).powf(2.0)).sqrt();
     let eye = (1.0 - (d / 0.25).clamp(0.0,1.0)).powf(2.0);
-    base = base.lerp(Vec3::new(1.0,0.95,0.85), eye);
+    base = base.lerp(Vec3::new(0.85,0.55,0.95), eye); // remolino púrpura
 
     // Si es anillo, ilumina y cambia color
     if u.ring_enabled {
@@ -133,16 +138,18 @@ pub fn gas_giant(fragment: Fragment, u: ShaderUniforms) -> Vec3 {
         if !mask { return Vec3::new(0.0, 0.0, 0.0); }
 
         // Bandas sinusoidales y granulado procedural
-        let bands = 0.5 + 0.5 * (r * 120.0 + u.time * 0.5).sin();
-        let grains = fbm(r * 25.0, 0.0, 3);
-        let colorA = Vec3::new(0.95, 0.92, 0.85); // blanco-amarillo
-        let colorB = Vec3::new(0.7, 0.7, 0.8);    // azul-gris
-        let colorC = Vec3::new(0.8, 0.6, 1.0);    // violeta claro
-        let base = colorA.lerp(colorB, 0.6 * bands + 0.4 * grains).lerp(colorC, 0.2 * bands);
+    let bands = 0.5 + 0.5 * (r * 90.0 + u.time * 0.35).sin();
+    let grains = fbm(r * 18.0, 0.0, 4);
+    let ang = (fragment.world_pos.x.atan2(fragment.world_pos.z) * 8.0 + u.time*0.5).sin()*0.5+0.5; // variación angular
+    let colorA = Vec3::new(0.15,0.55,0.50);   // turquesa oscuro
+    let colorB = Vec3::new(0.60,0.90,0.35);   // verde lima
+    let colorC = Vec3::new(0.65,0.30,0.85);   // púrpura acento
+    let base = colorA.lerp(colorB, bands).lerp(colorC, 0.35*ang + 0.25*grains);
 
         // Brillo en el borde (rim)
         let rim = (1.0 - ((r - u.ring_inner) / (u.ring_outer - u.ring_inner)).abs()).powf(2.0);
-        let light = 0.7 + 0.3 * rim;
+    let pulse = (u.time*0.8).sin()*0.5+0.5;
+    let light = 0.6 + 0.25 * rim + 0.15 * pulse;
 
         // Opacidad variable (más transparente en los bordes)
         // Si tu framebuffer soporta alpha, puedes usar: let alpha = 0.85 * rim;
@@ -151,7 +158,8 @@ pub fn gas_giant(fragment: Fragment, u: ShaderUniforms) -> Vec3 {
         return vec3_clamp01(base * light + Vec3::splat(0.18 * rim));
     }
 
-    let col = base * (0.25 + 0.75*lam) + Vec3::splat(1.0)*(0.08*rim);
+    let pulse = (u.time*0.5).sin()*0.5+0.5;
+    let col = base * (0.30 + 0.70*lam) + Vec3::new(0.4,0.15,0.55)*(0.10*rim*pulse);
     vec3_clamp01(col)
 }
 
@@ -165,13 +173,59 @@ pub fn scifi_planet(fragment: Fragment, u: ShaderUniforms) -> Vec3 {
     let cracks = ((0.62 - f) * 50.0).clamp(0.0,1.0);
 
     // Previous look: dark, subtle emission, less purple
-    let core = Vec3::new(0.18, 0.08, 0.22); // dark purple
-    let lava = Vec3::new(1.0, 0.5, 0.2); // orange lava
-    let base = core.lerp(lava, cracks * 0.7 + rim * 0.2);
+    // Nuevo planeta "alien" bioluminiscente verde-morado
+    let base_dark = Vec3::new(0.05,0.08,0.09);      // base oscura
+    let vein_green = Vec3::new(0.10,0.85,0.35);     // venas verdes
+    let vein_purple= Vec3::new(0.55,0.20,0.85);     // energía púrpura
+    let mix = (cracks*0.8 + 0.2*rim).clamp(0.0,1.0);
+    let biolum = vein_green.lerp(vein_purple, (u.time*0.7).sin()*0.5+0.5);
+    let base = base_dark.lerp(biolum, mix);
 
     // Emission in cracks and rim
-    let emission = cracks * (0.5 + 0.5*(1.0 - lam)) + rim * 0.15;
-    let col = base * (0.25 + 0.75*lam) + Vec3::new(1.0,0.5,0.2)*emission;
+    let pulse_fast = (u.time*1.5).sin()*0.5+0.5;
+    let emission = (cracks * (0.4 + 0.4*(1.0 - lam)) + rim * 0.20 + 0.25*pulse_fast)*mix;
+    let emissive_color = Vec3::new(0.35,0.9,0.45).lerp(Vec3::new(0.70,0.25,0.95), (u.time*0.4).sin()*0.5+0.5);
+    let col = base * (0.20 + 0.80*lam) + emissive_color * emission;
+    vec3_clamp01(col)
+}
+
+// ---------- planeta de lava ----------
+pub fn lava_planet(fragment: Fragment, u: ShaderUniforms) -> Vec3 {
+    let (lon, lat, n) = lon_lat_from_pos(fragment.world_pos);
+    let view = (u.camera_pos - fragment.world_pos).normalize();
+    let (lam, rim) = lighting(n, view);
+    let flow = fbm(lon*5.5 + 0.25*u.time, lat*5.5 - 0.15*u.time, 5);
+    let crust_noise = fbm(lon*12.0, lat*12.0 + 0.2*u.time, 4);
+    let cracks = ((flow - 0.45) * 25.0).clamp(0.0,1.0);
+    let crust = Vec3::new(0.05,0.03,0.02);
+    let lava_a = Vec3::new(0.90,0.30,0.05);
+    let lava_b = Vec3::new(1.0,0.85,0.25);
+    let lava_col = lava_a.lerp(lava_b, (u.time*0.7).sin()*0.5+0.5);
+    let base = crust.lerp(lava_col, cracks);
+    let pulse = (u.time*1.2).sin()*0.5+0.5;
+    let emission = (cracks * (0.6 + 0.4*pulse) + rim*0.15) * (0.7 + 0.3*crust_noise);
+    let col = base * (0.28 + 0.72*lam) + lava_col * emission;
+    vec3_clamp01(col)
+}
+
+// ---------- planeta de hielo ----------
+pub fn ice_planet(fragment: Fragment, u: ShaderUniforms) -> Vec3 {
+    let (lon, lat, n) = lon_lat_from_pos(fragment.world_pos);
+    let view = (u.camera_pos - fragment.world_pos).normalize();
+    let (lam, rim) = lighting(n, view);
+    let base_noise = fbm(lon*3.5, lat*3.5, 5);
+    let crack_noise = fbm(lon*14.0 + 0.1*u.time, lat*14.0, 4);
+    let crystal = fbm(lon*28.0 - 0.2*u.time, lat*28.0 + 0.15*u.time, 3);
+    let cracks = ((crack_noise - 0.55)*30.0).clamp(0.0,1.0);
+    let snow = (base_noise*0.6 + crystal*0.4).clamp(0.0,1.0);
+    let ice_c = Vec3::new(0.50,0.80,0.95);
+    let deep_c= Vec3::new(0.08,0.25,0.40);
+    let crack_c= Vec3::new(0.85,0.95,1.0);
+    let base = deep_c.lerp(ice_c, snow).lerp(crack_c, cracks*0.7);
+    let aurora = (lat*8.0 + lon*2.0 + u.time*0.4).sin()*0.5+0.5;
+    let aurora_col = Vec3::new(0.15,0.85,0.60).lerp(Vec3::new(0.55,0.25,0.95), crystal);
+    let emission = (aurora*0.25 + rim*0.18) * (0.6 + 0.4*crystal);
+    let col = base * (0.30 + 0.70*lam) + aurora_col * emission;
     vec3_clamp01(col)
 }
 
@@ -192,7 +246,9 @@ pub fn shade_fragment(fragment: Fragment, u: ShaderUniforms) -> Vec3 {
     match u.mode {
         0 => rocky_planet(fragment, u),
         1 => gas_giant(fragment, u),
-        2 => scifi_planet(fragment, u),
+        2 => scifi_planet(fragment, u), // alien
+        3 => lava_planet(fragment, u),
+        4 => ice_planet(fragment, u),
         _ => rocky_planet(fragment, u),
     }
 }

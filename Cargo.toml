@@ -11,3 +11,7 @@ anyhow = "1"
 [[bin]]
 name = "planetlab"
 path = "planetLab/src/main.rs"
+
+[[bin]]
+name = "starlab"
+path = "planetLab/src/star_main.rs"
