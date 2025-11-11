@@ -6,7 +6,7 @@ mod triangle;
 mod shader;
 
 use glam::{Mat4, Vec3};
-use minifb::{Window, WindowOptions};
+use minifb::{Window, WindowOptions, Key};
 use std::time::Instant;
 
 use framebuffer::Framebuffer;
@@ -33,11 +33,24 @@ fn main() -> anyhow::Result<()> {
         disp_amp: 0.18,
         disp_freq: 2.5,
         speed: 0.55,
+        noise_mode: 3, // default: 1=Perlin,2=Simplex,3=Cellular (value+cell blend)
     };
 
     let t0 = Instant::now();
 
     while window.is_open() {
+        if window.is_key_pressed(Key::Key1, minifb::KeyRepeat::No) { params.noise_mode = 1; }
+        if window.is_key_pressed(Key::Key2, minifb::KeyRepeat::No) { params.noise_mode = 2; }
+        if window.is_key_pressed(Key::Key3, minifb::KeyRepeat::No) { params.noise_mode = 3; }
+        // optional quick tweaks
+        if window.is_key_pressed(Key::Up, minifb::KeyRepeat::Yes) { params.disp_amp = (params.disp_amp + 0.005).min(0.6); }
+        if window.is_key_pressed(Key::Down, minifb::KeyRepeat::Yes) { params.disp_amp = (params.disp_amp - 0.005).max(0.0); }
+        if window.is_key_pressed(Key::Right, minifb::KeyRepeat::Yes) { params.disp_freq = (params.disp_freq + 0.02).min(10.0); }
+        if window.is_key_pressed(Key::Left, minifb::KeyRepeat::Yes) { params.disp_freq = (params.disp_freq - 0.02).max(0.3); }
+        if window.is_key_pressed(Key::W, minifb::KeyRepeat::Yes) { params.temp_kelvin = (params.temp_kelvin + 30.0).min(12000.0); }
+        if window.is_key_pressed(Key::S, minifb::KeyRepeat::Yes) { params.temp_kelvin = (params.temp_kelvin - 30.0).max(3000.0); }
+        if window.is_key_pressed(Key::A, minifb::KeyRepeat::Yes) { params.speed = (params.speed - 0.01).max(0.05); }
+        if window.is_key_pressed(Key::D, minifb::KeyRepeat::Yes) { params.speed = (params.speed + 0.01).min(2.5); }
         let t = t0.elapsed().as_secs_f32();
         params.time = t;
 
@@ -56,6 +69,8 @@ fn main() -> anyhow::Result<()> {
         // We need custom draw to apply vertex displacement
         draw_mesh_star(&mut fb, &sphere, model, &cam, params);
 
+        window.set_title(&format!("StarLab | Mode:{} (1=Perlin 2=Simplex 3=Cellular) Amp:{:.2} Freq:{:.2} Temp:{:.0}K Speed:{:.2}",
+            params.noise_mode, params.disp_amp, params.disp_freq, params.temp_kelvin, params.speed));
         window.update_with_buffer(&fb.color, fb.w, fb.h)?;
     }
     Ok(())
