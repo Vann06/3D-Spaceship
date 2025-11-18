@@ -9,9 +9,9 @@ use obj_loader::Mesh;
 use raylib::prelude::*;
 use std::{f32::consts::PI, fs, path::Path};
 
-const SHIP_CLEARANCE: f32 = 0.09;
+const SHIP_CLEARANCE: f32 = 0.045;
 const STAR_CLEARANCE: f32 = 0.25;
-const MOON_CLEARANCE: f32 = 0.06;
+const MOON_CLEARANCE: f32 = 0.035;
 
 #[derive(Clone)]
 struct Body {
@@ -23,6 +23,9 @@ struct Body {
     rotation_speed: f32,
     mode: u32,
     has_ring: bool,
+    ring_inner_scale: f32,
+    ring_outer_scale: f32,
+    ring_tilt_deg: f32,
 }
 
 #[derive(Clone)]
@@ -239,6 +242,111 @@ fn look_angles(from: Vector3, to: Vector3) -> (f32, f32) {
     (yaw, pitch)
 }
 
+fn draw_planet_ring(
+    fb: &mut Framebuffer,
+    uniforms: &mut shader::Uniforms,
+    center: Vector3,
+    inner_radius: f32,
+    outer_radius: f32,
+    tilt_deg: f32,
+    base_color: Vector3,
+    segments: usize,
+    bird_eye: bool,
+    screen_center: Vector2,
+    cam_pos_world: Vector3,
+    pixels_per_unit: f32,
+    camera_distance: f32,
+    cam_yaw: f32,
+    cam_pitch: f32,
+) {
+    if inner_radius <= 0.0 || outer_radius <= inner_radius {
+        return;
+    }
+    let seg_count = segments.max(16);
+    let tilt = tilt_deg.to_radians();
+    let sin_tilt = tilt.sin();
+    let cos_tilt = tilt.cos();
+
+    let mut inner_points: Vec<Vector3> = Vec::with_capacity(seg_count + 1);
+    let mut outer_points: Vec<Vector3> = Vec::with_capacity(seg_count + 1);
+    for i in 0..=seg_count {
+        let angle = (i as f32 / seg_count as f32) * 2.0 * PI;
+        let (sin_a, cos_a) = angle.sin_cos();
+        let make_point = |radius: f32| -> Vector3 {
+            let local_x = cos_a * radius;
+            let local_z = sin_a * radius;
+            let tilt_y = -local_z * sin_tilt;
+            let tilt_z = local_z * cos_tilt;
+            Vector3::new(center.x + local_x, center.y + tilt_y, center.z + tilt_z)
+        };
+        inner_points.push(make_point(inner_radius));
+        outer_points.push(make_point(outer_radius));
+    }
+
+    let prev_pattern = uniforms.pattern;
+    let prev_ring_flag = uniforms.ring_enabled;
+    let prev_inner = uniforms.ring_inner;
+    let prev_outer = uniforms.ring_outer;
+    let prev_center = uniforms.ring_center;
+    uniforms.pattern = 300;
+    uniforms.ring_enabled = true;
+    uniforms.ring_inner = inner_radius;
+    uniforms.ring_outer = outer_radius;
+    uniforms.ring_center = center;
+
+    for i in 0..seg_count {
+        let p_inner0 = inner_points[i];
+        let p_inner1 = inner_points[i + 1];
+        let p_outer0 = outer_points[i];
+        let p_outer1 = outer_points[i + 1];
+        let tris = [
+            (p_outer0, p_outer1, p_inner0),
+            (p_inner0, p_outer1, p_inner1),
+        ];
+        for (a, b, c) in tris {
+            let sa = project_point(
+                a,
+                bird_eye,
+                screen_center,
+                cam_pos_world,
+                pixels_per_unit,
+                camera_distance,
+                cam_yaw,
+                cam_pitch,
+            );
+            let sb = project_point(
+                b,
+                bird_eye,
+                screen_center,
+                cam_pos_world,
+                pixels_per_unit,
+                camera_distance,
+                cam_yaw,
+                cam_pitch,
+            );
+            let sc = project_point(
+                c,
+                bird_eye,
+                screen_center,
+                cam_pos_world,
+                pixels_per_unit,
+                camera_distance,
+                cam_yaw,
+                cam_pitch,
+            );
+            crate::triangle::triangle_filled_world(
+                fb, sa, sb, sc, a, b, c, base_color, uniforms,
+            );
+        }
+    }
+
+    uniforms.pattern = prev_pattern;
+    uniforms.ring_enabled = prev_ring_flag;
+    uniforms.ring_inner = prev_inner;
+    uniforms.ring_outer = prev_outer;
+    uniforms.ring_center = prev_center;
+}
+
 fn main() {
     let width = 1000;
     let height = 800;
@@ -254,7 +362,7 @@ fn main() {
     let mut fb = Framebuffer::new(width as u32, height as u32);
     fb.set_background_color(Color::new(5, 5, 20, 255));
 
-    let mut high_quality = false;
+    let mut high_quality = true;
     let mut sphere = generate_uv_sphere(16, 22, 1.0);
 
     let star = Body {
@@ -266,77 +374,101 @@ fn main() {
         rotation_speed: 5.0,
         mode: 0,
         has_ring: false,
+        ring_inner_scale: 0.0,
+        ring_outer_scale: 0.0,
+        ring_tilt_deg: 0.0,
     };
     let planets = vec![
         Body {
-            name: "Asteroide",
+            name: "Asteroide Prisma",
             radius: 0.16,
-            color: Vector3::new(0.55, 0.45, 0.38),
+            color: Vector3::new(0.65, 0.55, 0.35),
             orbit_radius: 1.9,
             orbit_speed: 1.25,
             rotation_speed: 32.0,
             mode: 0,
             has_ring: false,
+            ring_inner_scale: 0.0,
+            ring_outer_scale: 0.0,
+            ring_tilt_deg: 0.0,
         },
         Body {
-            name: "Selva Boreal",
+            name: "Selva Luminosa",
             radius: 0.24,
-            color: Vector3::new(0.2, 0.7, 0.35),
+            color: Vector3::new(0.18, 0.85, 0.4),
             orbit_radius: 3.1,
             orbit_speed: 1.02,
             rotation_speed: 24.0,
             mode: 0,
             has_ring: false,
+            ring_inner_scale: 0.0,
+            ring_outer_scale: 0.0,
+            ring_tilt_deg: 0.0,
         },
         Body {
-            name: "Planeta Gélido",
+            name: "Glacia Prisma",
             radius: 0.26,
-            color: Vector3::new(0.72, 0.9, 1.0),
+            color: Vector3::new(0.55, 0.9, 1.0),
             orbit_radius: 4.3,
             orbit_speed: 0.84,
             rotation_speed: 26.0,
             mode: 4,
             has_ring: false,
+            ring_inner_scale: 0.0,
+            ring_outer_scale: 0.0,
+            ring_tilt_deg: 0.0,
         },
         Body {
-            name: "Planeta Cristal",
+            name: "Cristal Helicoide",
             radius: 0.30,
-            color: Vector3::new(0.65, 0.85, 1.0),
+            color: Vector3::new(0.48, 0.92, 1.0),
             orbit_radius: 5.7,
             orbit_speed: 0.62,
             rotation_speed: 24.0,
             mode: 4,
             has_ring: true,
+            ring_inner_scale: 1.55,
+            ring_outer_scale: 3.1,
+            ring_tilt_deg: 18.0,
         },
         Body {
-            name: "Planeta Fuego",
+            name: "Tormenta Ember",
             radius: 0.34,
-            color: Vector3::new(0.98, 0.35, 0.08),
+            color: Vector3::new(1.0, 0.45, 0.15),
             orbit_radius: 6.9,
             orbit_speed: 0.55,
             rotation_speed: 30.0,
             mode: 3,
             has_ring: false,
+            ring_inner_scale: 0.0,
+            ring_outer_scale: 0.0,
+            ring_tilt_deg: 0.0,
         },
         Body {
-            name: "Planeta Oceánico",
+            name: "Mar de Neón",
             radius: 0.36,
-            color: Vector3::new(0.1, 0.65, 0.9),
+            color: Vector3::new(0.2, 0.78, 1.0),
             orbit_radius: 8.3,
             orbit_speed: 0.48,
             rotation_speed: 18.0,
             mode: 1,
             has_ring: true,
+            ring_inner_scale: 1.35,
+            ring_outer_scale: 2.8,
+            ring_tilt_deg: 11.0,
         },
         Body {
-            name: "Planeta Nube",
-            radius: 0.32,
-            color: Vector3::new(0.75, 0.45, 0.95),
+            name: "Nebulosa Violeta",
+            radius: 0.33,
+            color: Vector3::new(0.92, 0.35, 1.0),
             orbit_radius: 9.6,
             orbit_speed: 0.41,
-            rotation_speed: 16.0,
+            rotation_speed: 18.0,
             mode: 2,
-            has_ring: false,
+            has_ring: true,
+            ring_inner_scale: 1.1,
+            ring_outer_scale: 2.4,
+            ring_tilt_deg: 27.0,
         },
     ];
 
@@ -349,7 +481,7 @@ fn main() {
     let bird_eye_height = 7.0f32;
     let mut cam_yaw = 0.0f32;
     let mut cam_pitch = -5.0f32;
-    let follow_distance = 2.2f32;
+    let follow_distance = 1.8f32;
 
     let t0 = std::time::Instant::now();
     let mut warp_flash = 0.0f32;
@@ -551,13 +683,13 @@ fn main() {
         }
 
         if rl.is_key_down(KeyboardKey::KEY_Z) {
-            pixels_per_unit = (pixels_per_unit * 1.02).min(180.0);
+            pixels_per_unit = (pixels_per_unit * 1.02 + 0.3).min(260.0);
         }
         if rl.is_key_down(KeyboardKey::KEY_X) {
-            pixels_per_unit = (pixels_per_unit * 0.98).max(18.0);
+            pixels_per_unit = (pixels_per_unit * 0.98).max(14.0);
         }
         if inspect_mode {
-            pixels_per_unit = (pixels_per_unit * 1.03).min(320.0);
+            pixels_per_unit = (pixels_per_unit * 1.045 + 0.5).min(520.0);
         }
 
         let forward_speed = dot(ship_velocity, forward);
@@ -584,8 +716,8 @@ fn main() {
                         normalize_vec(Vector3::new(target.x, 0.0, target.z))
                     };
                     ship_world_pos = target
-                        + outward * (body.radius + 2.2)
-                        + Vector3::new(0.0, body.radius * 0.35 + 0.35, 0.0);
+                        + outward * (body.radius + 1.15)
+                        + Vector3::new(0.0, body.radius * 0.22 + 0.25, 0.0);
                     ship_velocity = Vector3::new(0.0, 0.0, 0.0);
                     let (yaw, pitch) = look_angles(ship_world_pos, target);
                     cam_yaw = yaw;
@@ -613,7 +745,9 @@ fn main() {
                                 moon.orbit_radius * moon.phase.sin(),
                             );
                         let outward = normalize_vec(target - parent_world);
-                        ship_world_pos = target + outward * (moon.radius + 0.3) + Vector3::new(0.0, 0.2, 0.0);
+                        ship_world_pos = target
+                            + outward * (moon.radius + 0.18)
+                            + Vector3::new(0.0, 0.12, 0.0);
                         ship_velocity = Vector3::new(0.0, 0.0, 0.0);
                         let (yaw, pitch) = look_angles(ship_world_pos, target);
                         cam_yaw = yaw;
@@ -625,18 +759,22 @@ fn main() {
             }
         }
 
-        let cam_pos_world = if bird_eye {
+        let mut cam_pos_world = if bird_eye {
             Vector3::new(ship_world_pos.x, bird_eye_height, ship_world_pos.z)
         } else {
-            let mut trailing = (follow_distance + forward_speed * 0.12).clamp(1.5, 4.0);
+            let mut trailing = (follow_distance + forward_speed * 0.12).clamp(1.0, 3.5);
             if inspect_mode {
-                trailing = trailing.min(1.2);
+                trailing = trailing.min(0.55);
             }
-            let lift = 0.4 + ship_pitch_angle.abs() * 0.01 + if inspect_mode { 0.08 } else { 0.0 };
+            let base_lift = 0.4 + ship_pitch_angle.abs() * 0.01;
+            let lift = (base_lift + if inspect_mode { -0.15 } else { 0.0 }).max(0.05);
             ship_world_pos - forward * trailing
                 + Vector3::new(0.0, lift, 0.0)
                 + right * (-lateral_speed * 0.05)
         };
+        if inspect_mode && !bird_eye {
+            cam_pos_world += forward * 0.35;
+        }
 
         fb.clear();
         for (x, y, b) in &stars {
@@ -645,6 +783,7 @@ fn main() {
         }
         fb.set_current_color(Color::WHITE);
 
+        let perf_mode = if inspect_mode { false } else { !high_quality };
         let mut uniforms = shader::Uniforms {
             time: rl.get_time() as f32,
             pattern: 5,
@@ -655,7 +794,7 @@ fn main() {
             ring_outer: 0.0,
             ring_enabled: false,
             ring_center: Vector3::new(0.0, 0.0, 0.0),
-            performance_mode: !high_quality,
+            performance_mode: perf_mode,
         };
 
         let star_rot = Vector3::new(0.0, t * star.rotation_speed, 0.0);
@@ -734,14 +873,7 @@ fn main() {
             let rot = Vector3::new(0.0, t * p.rotation_speed, 0.0);
             uniforms.pattern = 200;
             uniforms.mode = p.mode;
-            if p.has_ring {
-                uniforms.ring_enabled = true;
-                uniforms.ring_center = pos_world;
-                uniforms.ring_inner = p.radius * 1.6;
-                uniforms.ring_outer = p.radius * 2.6;
-            } else {
-                uniforms.ring_enabled = false;
-            }
+            uniforms.ring_enabled = false;
             for f in &sphere.faces {
                 let w1 = rotate_xyz(sphere.vertices[f[0]] * p.radius, rot) + pos_world;
                 let w2 = rotate_xyz(sphere.vertices[f[1]] * p.radius, rot) + pos_world;
@@ -806,81 +938,26 @@ fn main() {
                 );
             }
             if p.has_ring {
-                uniforms.ring_enabled = true;
-                uniforms.ring_center = pos_world;
-                uniforms.ring_inner = p.radius * 3.0;
-                uniforms.ring_outer = p.radius * 3.8;
-                for f in &sphere.faces {
-                    let w1 = rotate_xyz(sphere.vertices[f[0]] * p.radius, rot) + pos_world;
-                    let w2 = rotate_xyz(sphere.vertices[f[1]] * p.radius, rot) + pos_world;
-                    let w3 = rotate_xyz(sphere.vertices[f[2]] * p.radius, rot) + pos_world;
-                    let (s1, s2, s3) = if bird_eye {
-                        (
-                            world_to_screen_top(
-                                w1,
-                                screen_center,
-                                cam_pos_world,
-                                pixels_per_unit,
-                                camera_distance,
-                            ),
-                            world_to_screen_top(
-                                w2,
-                                screen_center,
-                                cam_pos_world,
-                                pixels_per_unit,
-                                camera_distance,
-                            ),
-                            world_to_screen_top(
-                                w3,
-                                screen_center,
-                                cam_pos_world,
-                                pixels_per_unit,
-                                camera_distance,
-                            ),
-                        )
-                    } else {
-                        (
-                            world_to_screen(
-                                w1,
-                                screen_center,
-                                cam_pos_world,
-                                pixels_per_unit,
-                                camera_distance,
-                                cam_yaw,
-                                cam_pitch,
-                            ),
-                            world_to_screen(
-                                w2,
-                                screen_center,
-                                cam_pos_world,
-                                pixels_per_unit,
-                                camera_distance,
-                                cam_yaw,
-                                cam_pitch,
-                            ),
-                            world_to_screen(
-                                w3,
-                                screen_center,
-                                cam_pos_world,
-                                pixels_per_unit,
-                                camera_distance,
-                                cam_yaw,
-                                cam_pitch,
-                            ),
-                        )
-                    };
-                    crate::triangle::triangle_filled_world(
-                        &mut fb,
-                        s1,
-                        s2,
-                        s3,
-                        w1,
-                        w2,
-                        w3,
-                        p.color * 0.6,
-                        &uniforms,
-                    );
-                }
+                let ring_inner = p.radius * p.ring_inner_scale;
+                let ring_outer = p.radius * p.ring_outer_scale;
+                let ring_color = p.color.lerp(Vector3::new(0.9, 0.9, 0.95), 0.35);
+                draw_planet_ring(
+                    &mut fb,
+                    &mut uniforms,
+                    pos_world,
+                    ring_inner,
+                    ring_outer,
+                    p.ring_tilt_deg,
+                    ring_color,
+                    96,
+                    bird_eye,
+                    screen_center,
+                    cam_pos_world,
+                    pixels_per_unit,
+                    camera_distance,
+                    cam_yaw,
+                    cam_pitch,
+                );
             }
         }
 
@@ -984,6 +1061,7 @@ fn main() {
             }
         }
 
+        fb.set_current_color(Color::new(150, 200, 255, 140));
         for p in &planets {
             let mut prev: Option<Vector2> = None;
             let mut first: Option<Vector2> = None;
@@ -1023,6 +1101,7 @@ fn main() {
             }
         }
 
+        fb.set_current_color(Color::new(120, 210, 255, 110));
         for m in &moons {
             let parent = &planets[m.parent_index];
             let theta = t * parent.orbit_speed;
@@ -1068,6 +1147,7 @@ fn main() {
                 line::line(&mut fb, last_pt, first_pt);
             }
         }
+        fb.set_current_color(Color::WHITE);
 
         if let Some(mesh) = &snoopy_mesh {
             let rot = Vector3::new(180.0 + ship_pitch_angle, cam_yaw, ship_bank_angle);

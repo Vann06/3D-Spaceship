@@ -112,6 +112,9 @@ pub fn fragment_shader(fragment: &Fragment, uniforms: &Uniforms) -> Vector3 {
     if uniforms.pattern == 200 {
         return shade_fragment_static(fragment, uniforms);
     }
+    if uniforms.pattern == 300 {
+        return shade_planet_ring(fragment, uniforms);
+    }
     if uniforms.pattern == 999 {
         return vec3_clamp01(fragment.color);
     }
@@ -232,23 +235,8 @@ fn lighting(n: Vector3, view: Vector3, light_dir: Vector3) -> (f32, f32) {
     (lam, rim)
 }
 
-// Ring mask relative to world origin (approx). For planet-centered rings,
-// pass world positions offset by planet center when calling triangle raster.
-fn ring_mask(fragment: &Fragment, u: &Uniforms) -> bool {
-    if !u.ring_enabled {
-        return true;
-    }
-    let dx = fragment.world_position.x - u.ring_center.x;
-    let dz = fragment.world_position.z - u.ring_center.z;
-    let r = (dx * dx + dz * dz).sqrt();
-    (r >= u.ring_inner) && (r <= u.ring_outer)
-}
-
 // Mode-based dispatcher (0..4)
 fn shade_fragment_static(fragment: &Fragment, u: &Uniforms) -> Vector3 {
-    if u.ring_enabled && !ring_mask(fragment, u) {
-        return Vector3::new(0.0, 0.0, 0.0);
-    }
     match u.mode {
         0 => rocky_planet_static(fragment, u),
         1 => gas_giant_static(fragment, u),
@@ -325,29 +313,6 @@ fn gas_giant_static(fragment: &Fragment, u: &Uniforms) -> Vector3 {
     let eye = (1.0 - (d / 0.25).clamp(0.0, 1.0)).powf(2.0);
     base = base.lerp(Vector3::new(0.85, 0.55, 0.95), eye);
     base = base.lerp(tint, 0.4);
-    if u.ring_enabled {
-        // Ring color around ring_center
-        let dx = fragment.world_position.x - u.ring_center.x;
-        let dz = fragment.world_position.z - u.ring_center.z;
-        let r = (dx * dx + dz * dz).sqrt();
-        let mask = (r >= u.ring_inner) && (r <= u.ring_outer);
-        if !mask {
-            return Vector3::new(0.0, 0.0, 0.0);
-        }
-        let bands = 0.5 + 0.5 * (r * 90.0 + u.time * 0.35).sin();
-        let grains = fbm(r * 18.0, 0.0, 4);
-        let ang = (dx.atan2(dz) * 8.0 + u.time * 0.5).sin() * 0.5 + 0.5;
-        let color_a = Vector3::new(0.15, 0.55, 0.50);
-        let color_b = Vector3::new(0.60, 0.90, 0.35);
-        let color_c = Vector3::new(0.65, 0.30, 0.85);
-        let base_ring = color_a
-            .lerp(color_b, bands)
-            .lerp(color_c, 0.35 * ang + 0.25 * grains);
-        let rimr = (1.0 - ((r - u.ring_inner) / (u.ring_outer - u.ring_inner)).abs()).powf(2.0);
-        let pulse = (u.time * 0.8).sin() * 0.5 + 0.5;
-        let light = 0.6 + 0.25 * rimr + 0.15 * pulse;
-        return vec3_clamp01(base_ring * light + Vector3::new(0.18, 0.18, 0.18) * rimr);
-    }
     let pulse = (u.time * 0.5).sin() * 0.5 + 0.5;
     let col = base * (0.30 + 0.70 * lam) + Vector3::new(0.4, 0.15, 0.55) * (0.10 * rim * pulse);
     vec3_clamp01(col)
@@ -434,6 +399,35 @@ fn ice_planet_static(fragment: &Fragment, u: &Uniforms) -> Vector3 {
     let aurora_col = Vector3::new(0.15, 0.85, 0.60).lerp(Vector3::new(0.55, 0.25, 0.95), crystal);
     let emission = (aurora * 0.25 + rim * 0.18) * (0.6 + 0.4 * crystal);
     let col = base * (0.30 + 0.70 * lam) + aurora_col * emission;
+    vec3_clamp01(col)
+}
+
+fn shade_planet_ring(fragment: &Fragment, u: &Uniforms) -> Vector3 {
+    if !u.ring_enabled {
+        return Vector3::new(0.0, 0.0, 0.0);
+    }
+    let dx = fragment.world_position.x - u.ring_center.x;
+    let dz = fragment.world_position.z - u.ring_center.z;
+    let radius = (dx * dx + dz * dz).sqrt();
+    if radius < u.ring_inner || radius > u.ring_outer {
+        return Vector3::new(0.0, 0.0, 0.0);
+    }
+    let span = (u.ring_outer - u.ring_inner).max(1e-4);
+    let radial = ((radius - u.ring_inner) / span).clamp(0.0, 1.0);
+    let angle = dz.atan2(dx);
+    let stripe = (radial * 240.0 + u.time * 0.35).sin() * 0.5 + 0.5;
+    let swirl = (angle * 6.0 + u.time * 0.6).sin() * 0.5 + 0.5;
+    let grains = fbm(radius * 38.0, angle * 2.0, 3);
+    let base_a = Vector3::new(0.82, 0.74, 0.52);
+    let base_b = Vector3::new(0.45, 0.78, 0.92);
+    let accent = Vector3::new(0.65, 0.32, 0.85);
+    let mut col = base_a
+        .lerp(base_b, radial)
+        .lerp(accent, 0.25 * swirl + 0.35 * stripe);
+    col += Vector3::new(0.10, 0.10, 0.12) * grains * 0.4;
+    let rim = (radial * (1.0 - radial)).powf(0.35);
+    let pulse = (u.time * 0.9).sin() * 0.5 + 0.5;
+    col = col * (0.70 + 0.25 * grains) + Vector3::new(0.25, 0.28, 0.32) * rim * pulse;
     vec3_clamp01(col)
 }
 

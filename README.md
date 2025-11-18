@@ -1,59 +1,71 @@
-# SpaceTravel — Snoopy Solar System (Software Renderer)
+# SpaceTravel — Sistema Solar de Snoopy
 
-[![Watch video (YouTube)](https://img.youtube.com/vi/ry4oAwbALA8/hqdefault.jpg)](https://youtu.be/ry4oAwbALA8)
+[![Ver video (YouTube)](https://img.youtube.com/vi/ry4oAwbALA8/hqdefault.jpg)](https://youtu.be/ry4oAwbALA8)
 
-A single executable that merges the Bianca-style solar tour with the Snoopy spaceship. Everything you see (planets, rings, Snoopy) is rasterized on the CPU with our custom framebuffer + Raylib window. Controls, warp keys, and camera behavior match BiancaCalderon/SpaceTravel so grading can be done side-by-side.
+Un único ejecutable combina el tour del sistema solar con la nave de Snoopy. Todo el render ocurre en CPU usando nuestro framebuffer hecho a mano más una ventana de Raylib. Los controles, las teclas de warp y la cámara replican BiancaCalderon/SpaceTravel para que la rúbrica se evalúe uno a uno.
 
-## Run it
+## Cómo ejecutarlo
 
 ```powershell
 cargo run --release
 ```
 
-Release mode is recommended for a stable 60–90 FPS on mid-tier laptops. Debug builds also work but with lower frame rates.
+El perfil `--release` mantiene 60–90 FPS en laptops medias.
 
-## Controls (same as Bianca’s spec)
+## Controles
 
-- `W` / `S`: fly the Snoopy ship forward and backward
-- `A` / `D`: strafe left / right (ship-relative)
-- `Q` / `E`: subir / bajar (ascend / descend)
-- Arrow keys: rotate camera around the ship
-- `Z` / `X`: zoom (changes world→screen pixel scale)
-- `1`: warp near the sun
-- `2`..`8`: warp near Asteroide, Rocoso, Tierra, Cristal, Fuego, Agua y Nube (same ordering as Bianca’s README)
-- `B`: toggle bird-eye camera (zenith)
-- `P`: toggle high-quality spheres (more stacks/slices + full shader) vs. performance mode
-- `Esc`: exit
+- `W` / `S`: avanzar o retroceder la nave (dirección de la nariz)
+- `A` / `D`: desplazamiento lateral relativo al cuerpo
+- `Q` / `E`: subir / bajar
+- Flechas: orbitar la cámara alrededor de Snoopy
+- `Shift` izq./der.: modo inspección (zoom extremo + cámara pegada al casco)
+- `Z` / `X`: zoom gradual manual
+- `1`: warp al Sol
+- `2`..`8`: warp a Asteroide, Selva Boreal, Planeta Gélido, Cristal, Fuego, Oceánico y Nube
+- `F1`..`F4`: warp directo a las lunas (órbitas de Rocoso y Cristal)
+- `B`: cámara cenital para comparaciones de rúbrica
+- `P`: alterna calidad alta (sombreadores completos del branch Static-Shaders) contra modo rendimiento
+- `Esc`: salir
 
-## What you’ll see
+## Que se puede ver
 
-- Central star plus 7 stylized planets with Static-Shader patterns: rocky, gas, sci-fi, lava, ice, etc.
-- Two procedural rings on Cristal, optional halo on Agua.
-- Two orbiting moons (Rocoso + Cristal) with their own shading.
-- Snoopy mesh rendered from `models/Snoopy.obj` using the base color read from `models/Snoopy.mtl`.
-- Warp titles update to show which body you’re locked on (`Snoopy Solar System — Tierra`, etc.).
-- Orbit guides for planets + moons (drawn last so they stay visible).
-- Bird-eye view for grading camera comparisons.
+- Estrella central más 7 planetas estilizados, cada uno con los patrones del branch `Static-Shaders` (rocoso, gas gigante, alien, lava, hielo).
+- Nuevos anillos procedurales inspirados en `cafetowake/GraficasAndSpace` con doble banda, ruido granular y leve inclinación.
+- Dos lunas orbitando (una rocosa y otra helada) con sombreadores propios y teclas de warp dedicadas.
+- Snoopy renderizado desde `models/Snoopy.obj` y coloreado con el `mtl`; el shader 999 deja el modelo totalmente blanco para resaltar sobre los planetas.
+- Modo inspección (mantén `Shift`) que acerca la cámara, aumenta la resolución del shader y empuja la nave casi contra la superficie para apreciar las texturas.
+- Guías de órbita y skybox procedural de 800 estrellas para mantener contexto espacial.
 
-## Performance + Shading Notes
+## Notas de rendimiento y sombreado
 
-- `P` (performance switch) drops sphere resolution and simplifies shader paths when FPS matters.
-- Uniforms map to the same Static/Dynamic shader modes used in prior branches, so color palettes match past deliveries.
-- Everything is CPU-rendered with barycentric triangles, depth buffer, and procedural fragment shader.
+- El proyecto arranca en alta fidelidad (malla densa + shaders completos). Presiona `P` si necesitas subir FPS; al entrar en modo inspección se restaura la calidad automáticamente.
+- Los planetas usan exactamente los mismos parámetros que el branch `Static-Shaders`, así que los colores y ruidos coinciden con las entregas anteriores.
+- Los anillos se rasterizan como discos planos con su propio shader (`pattern 300`) para poder mezclar bandas, ruido y pulsos de luz sin trucos en las esferas.
 
-## Grading checklist
+## Lista de verificación de la rúbrica
 
-- ✅ One binary (`cargo run --release`) that covers the solar system + Snoopy ship; no secondary target needed.
-- ✅ Controls and warp keys identical to BiancaCalderon/SpaceTravel for 1:1 evaluation.
-- ✅ Snoopy mesh + material colors loaded from `/models`, matching repository assets.
-- ✅ All Rust warnings addressed; build is clean on stable 1.78+.
-- ✅ README documents how to run, what to test, and where each rubric item lives.
+- ✅ Un único binario (`cargo run --release`) con sistema solar, Snoopy y warp keys.
+- ✅ Controles y cámara idénticos a la referencia de Bianca; incluye vista cenital y bird-eye.
+- ✅ Nave personalizada (Snoopy) + assets OBJ/MTL dentro del repo.
+- ✅ Planetario completo con texturas procedurales, lunas, anillos, skybox y guías de órbita.
+- ✅ Evita colisiones empujando la nave fuera del Sol, planetas y lunas; el modo inspección permite acercarse sin atravesar geometría.
+- ✅ Warp animado + flash visual para soles/planetas/lunas.
+- ✅ README en español con pasos claros, controles y secciones para video/capturas.
 
-## Repo layout
+## Galería
 
-- `src/main.rs` — entry point with camera, controls, warp logic, Snoopy drawing, and raster loop.
-- `src/framebuffer.rs`, `src/triangle.rs`, `src/shader.rs` — software renderer core.
-- `src/obj_loader.rs` — OBJ triangulation (used for Snoopy); automatically centers meshes.
-- `models/` — includes `Snoopy.obj` + `.mtl`.
+Sitúa aquí tus capturas o gifs favoritos agregando los archivos al repositorio:
 
-Any other experimental binaries (old wireframe viewer, solar prototype) were consolidated here so there’s nothing extra to grade.
+```markdown
+![Sistema completo](docs/captura_sistema.png)
+![Warp cercano](docs/warp.gif)
+```
+
+(Reemplaza las rutas con tus propias imágenes cuando las tengas.)
+
+## Estructura del repositorio
+
+- `src/main.rs`: punto de entrada con cámara, controles, lógica de warp, Snoopy y bucle del rasterizador.
+- `src/framebuffer.rs`, `src/triangle.rs`, `src/shader.rs`: núcleo del renderizador en software.
+- `src/obj_loader.rs`: carga y triangulación de OBJ (usada para Snoopy) con centrado automático.
+- `models/`: contiene `Snoopy.obj` y `Snoopy.mtl` listos para la build.
