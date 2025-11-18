@@ -112,6 +112,9 @@ pub fn fragment_shader(fragment: &Fragment, uniforms: &Uniforms) -> Vector3 {
     if uniforms.pattern == 200 {
         return shade_fragment_static(fragment, uniforms);
     }
+    if uniforms.pattern == 999 {
+        return vec3_clamp01(fragment.color);
+    }
     // Extended patterns: >=100 use world-space planet/star shaders
     if uniforms.pattern >= 100 {
         return match uniforms.pattern {
@@ -260,6 +263,7 @@ fn rocky_planet_static(fragment: &Fragment, u: &Uniforms) -> Vector3 {
     if u.performance_mode {
         return Vector3::new(0.16, 0.45, 0.12);
     }
+    let tint = fragment.color;
     let (lon, lat, n) = lon_lat_from_pos(fragment.world_position);
     let view = v3_normalize(Vector3::new(
         u.camera_pos.x - fragment.world_position.x,
@@ -286,6 +290,7 @@ fn rocky_planet_static(fragment: &Fragment, u: &Uniforms) -> Vector3 {
     base = base.lerp(strata_col, 0.15 * strata);
     base = base.lerp(mineral_col, 0.10 * mineral);
     base *= 0.9 + 0.2 * rough;
+    base = base.lerp(tint, 0.35);
     let pulse = (u.time * 0.6).sin() * 0.5 + 0.5;
     let emission = 0.10 * (strata * mineral * land_mask) + 0.08 * pulse * ice;
     let glow_color = Vector3::new(0.55, 0.25, 0.65);
@@ -299,6 +304,7 @@ fn gas_giant_static(fragment: &Fragment, u: &Uniforms) -> Vector3 {
     if u.performance_mode {
         return Vector3::new(0.20, 0.75, 0.55);
     }
+    let tint = fragment.color;
     let (lon, lat, n) = lon_lat_from_pos(fragment.world_position);
     let view = v3_normalize(Vector3::new(
         u.camera_pos.x - fragment.world_position.x,
@@ -318,6 +324,7 @@ fn gas_giant_static(fragment: &Fragment, u: &Uniforms) -> Vector3 {
     let d = ((lat - lat0).powf(2.0) + (lon - lon0).powf(2.0)).sqrt();
     let eye = (1.0 - (d / 0.25).clamp(0.0, 1.0)).powf(2.0);
     base = base.lerp(Vector3::new(0.85, 0.55, 0.95), eye);
+    base = base.lerp(tint, 0.4);
     if u.ring_enabled {
         // Ring color around ring_center
         let dx = fragment.world_position.x - u.ring_center.x;
@@ -350,6 +357,7 @@ fn scifi_planet_static(fragment: &Fragment, u: &Uniforms) -> Vector3 {
     if u.performance_mode {
         return Vector3::new(0.45, 0.10, 0.55);
     }
+    let tint = fragment.color;
     let (lon, _lat, n) = lon_lat_from_pos(fragment.world_position);
     let view = v3_normalize(Vector3::new(
         u.camera_pos.x - fragment.world_position.x,
@@ -361,7 +369,8 @@ fn scifi_planet_static(fragment: &Fragment, u: &Uniforms) -> Vector3 {
     let cracks = ((0.62 - f) * 50.0).clamp(0.0, 1.0);
     let core = Vector3::new(0.18, 0.08, 0.22);
     let lava = Vector3::new(1.0, 0.5, 0.2);
-    let base = core.lerp(lava, cracks * 0.8);
+    let mut base = core.lerp(lava, cracks * 0.8);
+    base = base.lerp(tint, 0.55);
     let pulse_fast = (u.time * 1.5).sin() * 0.5 + 0.5;
     let emission = (cracks * (0.4 + 0.4 * (1.0 - lam)) + rim * 0.20 + 0.25 * pulse_fast) * cracks;
     let emissive_color = Vector3::new(0.35, 0.9, 0.45).lerp(
@@ -376,6 +385,7 @@ fn lava_planet_static(fragment: &Fragment, u: &Uniforms) -> Vector3 {
     if u.performance_mode {
         return Vector3::new(0.85, 0.35, 0.10);
     }
+    let tint = fragment.color;
     let (lon, lat, n) = lon_lat_from_pos(fragment.world_position);
     let view = v3_normalize(Vector3::new(
         u.camera_pos.x - fragment.world_position.x,
@@ -390,7 +400,8 @@ fn lava_planet_static(fragment: &Fragment, u: &Uniforms) -> Vector3 {
     let lava_a = Vector3::new(0.90, 0.30, 0.05);
     let lava_b = Vector3::new(1.0, 0.85, 0.25);
     let lava_col = lava_a.lerp(lava_b, (u.time * 0.7).sin() * 0.5 + 0.5);
-    let base = crust.lerp(lava_col, cracks);
+    let mut base = crust.lerp(lava_col, cracks);
+    base = base.lerp(tint, 0.3);
     let pulse = (u.time * 1.2).sin() * 0.5 + 0.5;
     let emission = (cracks * (0.6 + 0.4 * pulse) + rim * 0.15) * (0.7 + 0.3 * crust_noise);
     let col = base * (0.28 + 0.72 * lam) + lava_col * emission;
@@ -401,6 +412,7 @@ fn ice_planet_static(fragment: &Fragment, u: &Uniforms) -> Vector3 {
     if u.performance_mode {
         return Vector3::new(0.50, 0.80, 0.95);
     }
+    let tint = fragment.color;
     let (lon, lat, n) = lon_lat_from_pos(fragment.world_position);
     let view = v3_normalize(Vector3::new(
         u.camera_pos.x - fragment.world_position.x,
@@ -416,7 +428,8 @@ fn ice_planet_static(fragment: &Fragment, u: &Uniforms) -> Vector3 {
     let ice_c = Vector3::new(0.50, 0.80, 0.95);
     let deep_c = Vector3::new(0.08, 0.25, 0.40);
     let crack_c = Vector3::new(0.85, 0.95, 1.0);
-    let base = deep_c.lerp(ice_c, snow).lerp(crack_c, cracks * 0.7);
+    let mut base = deep_c.lerp(ice_c, snow).lerp(crack_c, cracks * 0.7);
+    base = base.lerp(tint, 0.5);
     let aurora = (lat * 8.0 + lon * 2.0 + u.time * 0.4).sin() * 0.5 + 0.5;
     let aurora_col = Vector3::new(0.15, 0.85, 0.60).lerp(Vector3::new(0.55, 0.25, 0.95), crystal);
     let emission = (aurora * 0.25 + rim * 0.18) * (0.6 + 0.4 * crystal);

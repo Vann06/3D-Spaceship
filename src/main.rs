@@ -9,6 +9,10 @@ use obj_loader::Mesh;
 use raylib::prelude::*;
 use std::{f32::consts::PI, fs, path::Path};
 
+const SHIP_CLEARANCE: f32 = 0.09;
+const STAR_CLEARANCE: f32 = 0.25;
+const MOON_CLEARANCE: f32 = 0.06;
+
 #[derive(Clone)]
 struct Body {
     name: &'static str,
@@ -34,6 +38,10 @@ struct Moon {
 fn normalize_vec(v: Vector3) -> Vector3 {
     let len = (v.x * v.x + v.y * v.y + v.z * v.z).sqrt().max(1e-6);
     Vector3::new(v.x / len, v.y / len, v.z / len)
+}
+
+fn dot(a: Vector3, b: Vector3) -> f32 {
+    a.x * b.x + a.y * b.y + a.z * b.z
 }
 
 fn load_snoopy_color<P: AsRef<Path>>(path: P) -> Vector3 {
@@ -145,6 +153,49 @@ fn world_to_screen(
     Vector3::new(sx, sy, cam_z)
 }
 
+fn project_point(
+    world: Vector3,
+    bird_eye: bool,
+    screen_center: Vector2,
+    cam_pos_world: Vector3,
+    pixels_per_unit: f32,
+    camera_distance: f32,
+    cam_yaw: f32,
+    cam_pitch: f32,
+) -> Vector3 {
+    if bird_eye {
+        world_to_screen_top(world, screen_center, cam_pos_world, pixels_per_unit, camera_distance)
+    } else {
+        world_to_screen(
+            world,
+            screen_center,
+            cam_pos_world,
+            pixels_per_unit,
+            camera_distance,
+            cam_yaw,
+            cam_pitch,
+        )
+    }
+}
+
+fn push_out_from_sphere(pos: &mut Vector3, vel: &mut Vector3, center: Vector3, radius: f32, clearance: f32) {
+    let to_center = *pos - center;
+    let dist = (to_center.x * to_center.x + to_center.y * to_center.y + to_center.z * to_center.z).sqrt();
+    let min_dist = radius + clearance;
+    if dist < min_dist {
+        let normal = if dist < 1e-4 {
+            Vector3::new(0.0, 1.0, 0.0)
+        } else {
+            Vector3::new(to_center.x / dist, to_center.y / dist, to_center.z / dist)
+        };
+        *pos = center + normal * min_dist;
+        let vn = dot(*vel, normal);
+        if vn < 0.0 {
+            *vel -= normal * vn;
+        }
+    }
+}
+
 fn world_to_screen_top(
     world: Vector3,
     screen_center: Vector2,
@@ -168,6 +219,16 @@ fn body_position(body: &Body, time: f32) -> Vector3 {
         0.0,
         body.orbit_radius * theta.sin(),
     )
+}
+
+fn moon_position(moon: &Moon, parent: &Body, time: f32) -> Vector3 {
+    let parent_world = body_position(parent, time);
+    parent_world
+        + Vector3::new(
+            moon.orbit_radius * moon.phase.cos(),
+            0.0,
+            moon.orbit_radius * moon.phase.sin(),
+        )
 }
 
 fn look_angles(from: Vector3, to: Vector3) -> (f32, f32) {
@@ -209,39 +270,39 @@ fn main() {
     let planets = vec![
         Body {
             name: "Asteroide",
-            radius: 0.14,
-            color: Vector3::new(0.6, 0.55, 0.5),
-            orbit_radius: 1.8,
-            orbit_speed: 1.3,
+            radius: 0.16,
+            color: Vector3::new(0.55, 0.45, 0.38),
+            orbit_radius: 1.9,
+            orbit_speed: 1.25,
             rotation_speed: 32.0,
             mode: 0,
             has_ring: false,
         },
         Body {
-            name: "Planeta Rocoso",
-            radius: 0.2,
-            color: Vector3::new(0.8, 0.65, 0.5),
-            orbit_radius: 3.0,
-            orbit_speed: 1.0,
-            rotation_speed: 22.0,
+            name: "Selva Boreal",
+            radius: 0.24,
+            color: Vector3::new(0.2, 0.7, 0.35),
+            orbit_radius: 3.1,
+            orbit_speed: 1.02,
+            rotation_speed: 24.0,
             mode: 0,
             has_ring: false,
         },
         Body {
-            name: "Tierra",
-            radius: 0.24,
-            color: Vector3::new(0.2, 0.5, 1.0),
-            orbit_radius: 4.4,
-            orbit_speed: 0.78,
-            rotation_speed: 28.0,
+            name: "Planeta Gélido",
+            radius: 0.26,
+            color: Vector3::new(0.72, 0.9, 1.0),
+            orbit_radius: 4.3,
+            orbit_speed: 0.84,
+            rotation_speed: 26.0,
             mode: 4,
             has_ring: false,
         },
         Body {
             name: "Planeta Cristal",
-            radius: 0.28,
+            radius: 0.30,
             color: Vector3::new(0.65, 0.85, 1.0),
-            orbit_radius: 5.6,
+            orbit_radius: 5.7,
             orbit_speed: 0.62,
             rotation_speed: 24.0,
             mode: 4,
@@ -249,8 +310,8 @@ fn main() {
         },
         Body {
             name: "Planeta Fuego",
-            radius: 0.32,
-            color: Vector3::new(0.95, 0.4, 0.18),
+            radius: 0.34,
+            color: Vector3::new(0.98, 0.35, 0.08),
             orbit_radius: 6.9,
             orbit_speed: 0.55,
             rotation_speed: 30.0,
@@ -258,10 +319,10 @@ fn main() {
             has_ring: false,
         },
         Body {
-            name: "Planeta Agua",
-            radius: 0.34,
-            color: Vector3::new(0.15, 0.8, 0.75),
-            orbit_radius: 8.2,
+            name: "Planeta Oceánico",
+            radius: 0.36,
+            color: Vector3::new(0.1, 0.65, 0.9),
+            orbit_radius: 8.3,
             orbit_speed: 0.48,
             rotation_speed: 18.0,
             mode: 1,
@@ -269,10 +330,10 @@ fn main() {
         },
         Body {
             name: "Planeta Nube",
-            radius: 0.30,
-            color: Vector3::new(0.6, 0.75, 0.95),
-            orbit_radius: 9.4,
-            orbit_speed: 0.42,
+            radius: 0.32,
+            color: Vector3::new(0.75, 0.45, 0.95),
+            orbit_radius: 9.6,
+            orbit_speed: 0.41,
             rotation_speed: 16.0,
             mode: 2,
             has_ring: false,
@@ -281,22 +342,25 @@ fn main() {
 
     let mut pixels_per_unit: f32 = 60.0;
     let mut ship_world_pos = Vector3::new(0.0, 0.25, -7.0);
+    let mut ship_velocity = Vector3::new(0.0, 0.0, 0.0);
     let screen_center = Vector2::new((width / 2) as f32, (height / 2) as f32);
     let camera_distance = 3.0;
     let mut bird_eye = false;
     let bird_eye_height = 7.0f32;
     let mut cam_yaw = 0.0f32;
     let mut cam_pitch = -5.0f32;
-    let follow_distance = 2.8f32;
+    let follow_distance = 2.2f32;
 
     let t0 = std::time::Instant::now();
+    let mut warp_flash = 0.0f32;
 
     let models_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("models");
     let snoopy_obj = models_dir.join("Snoopy.obj");
     let snoopy_mtl = models_dir.join("Snoopy.mtl");
     let snoopy_mesh = Mesh::load_obj(&snoopy_obj).ok();
     let snoopy_scale: f32 = 0.35;
-    let snoopy_color = load_snoopy_color(snoopy_mtl);
+    let _snoopy_material_color = load_snoopy_color(snoopy_mtl);
+    let snoopy_color = Vector3::new(1.0, 1.0, 1.0);
 
     let mut moons: Vec<Moon> = vec![
         Moon {
@@ -314,6 +378,22 @@ fn main() {
             orbit_speed: 1.4,
             phase: 1.2,
             mode: 4,
+        },
+        Moon {
+            parent_index: 4,
+            radius: 0.06,
+            orbit_radius: 0.52,
+            orbit_speed: 1.1,
+            phase: 2.4,
+            mode: 3,
+        },
+        Moon {
+            parent_index: 5,
+            radius: 0.05,
+            orbit_radius: 0.6,
+            orbit_speed: 1.3,
+            phase: 0.7,
+            mode: 1,
         },
     ];
 
@@ -341,10 +421,17 @@ fn main() {
         KeyboardKey::KEY_SEVEN,
         KeyboardKey::KEY_EIGHT,
     ];
+    const MOON_WARP_KEYS: [KeyboardKey; 4] = [
+        KeyboardKey::KEY_F1,
+        KeyboardKey::KEY_F2,
+        KeyboardKey::KEY_F3,
+        KeyboardKey::KEY_F4,
+    ];
 
     while !rl.window_should_close() {
         let t = t0.elapsed().as_secs_f32();
         let dt = rl.get_frame_time().max(1.0 / 240.0);
+        warp_flash = (warp_flash - dt * 1.5).max(0.0);
 
         if rl.is_key_pressed(KeyboardKey::KEY_B) {
             bird_eye = !bird_eye;
@@ -356,6 +443,13 @@ fn main() {
             } else {
                 generate_uv_sphere(16, 22, 1.0)
             };
+        }
+
+        let inspect_mode = rl.is_key_down(KeyboardKey::KEY_LEFT_SHIFT)
+            || rl.is_key_down(KeyboardKey::KEY_RIGHT_SHIFT);
+
+        for m in &mut moons {
+            m.phase = (m.phase + m.orbit_speed * dt) % (2.0 * PI);
         }
 
         let rot_speed = 65.0 * dt;
@@ -382,34 +476,98 @@ fn main() {
         let right = normalize_vec(Vector3::new(forward.z, 0.0, -forward.x));
         let up = Vector3::new(0.0, 1.0, 0.0);
 
-        let move_speed = 3.8 * dt;
+        let mut input_dir = Vector3::new(0.0, 0.0, 0.0);
         if rl.is_key_down(KeyboardKey::KEY_W) {
-            ship_world_pos += forward * move_speed;
+            input_dir += forward;
         }
         if rl.is_key_down(KeyboardKey::KEY_S) {
-            ship_world_pos -= forward * move_speed;
+            input_dir -= forward;
         }
         if rl.is_key_down(KeyboardKey::KEY_A) {
-            ship_world_pos -= right * move_speed;
+            input_dir -= right;
         }
         if rl.is_key_down(KeyboardKey::KEY_D) {
-            ship_world_pos += right * move_speed;
+            input_dir += right;
         }
         if rl.is_key_down(KeyboardKey::KEY_Q) {
-            ship_world_pos += up * move_speed;
+            input_dir += up;
         }
         if rl.is_key_down(KeyboardKey::KEY_E) {
-            ship_world_pos -= up * move_speed;
+            input_dir -= up;
         }
+
+        let input_len =
+            (input_dir.x * input_dir.x + input_dir.y * input_dir.y + input_dir.z * input_dir.z)
+                .sqrt();
+        let cruise_speed = if bird_eye { 4.5 } else { 5.5 };
+        let desired_velocity = if input_len > 1e-3 {
+            let normalized = Vector3::new(
+                input_dir.x / input_len,
+                input_dir.y / input_len,
+                input_dir.z / input_len,
+            );
+            normalized * cruise_speed
+        } else {
+            Vector3::new(0.0, 0.0, 0.0)
+        };
+        let accel = (6.0 * dt).min(1.0);
+        ship_velocity = ship_velocity + (desired_velocity - ship_velocity) * accel;
+        let speed_len = (ship_velocity.x * ship_velocity.x
+            + ship_velocity.y * ship_velocity.y
+            + ship_velocity.z * ship_velocity.z)
+            .sqrt();
+        if speed_len > cruise_speed {
+            let scale = cruise_speed / speed_len;
+            ship_velocity = ship_velocity * scale;
+        }
+        ship_world_pos += ship_velocity * dt;
+        push_out_from_sphere(
+            &mut ship_world_pos,
+            &mut ship_velocity,
+            Vector3::new(0.0, 0.0, 0.0),
+            star.radius,
+            STAR_CLEARANCE,
+        );
+        for body in &planets {
+            let planet_pos = body_position(body, t);
+            push_out_from_sphere(
+                &mut ship_world_pos,
+                &mut ship_velocity,
+                planet_pos,
+                body.radius,
+                SHIP_CLEARANCE,
+            );
+        }
+        for moon in &moons {
+            let parent = &planets[moon.parent_index];
+            let moon_pos = moon_position(moon, parent, t);
+            push_out_from_sphere(
+                &mut ship_world_pos,
+                &mut ship_velocity,
+                moon_pos,
+                moon.radius,
+                MOON_CLEARANCE,
+            );
+        }
+
         if rl.is_key_down(KeyboardKey::KEY_Z) {
-            pixels_per_unit = (pixels_per_unit * 1.02).min(140.0);
+            pixels_per_unit = (pixels_per_unit * 1.02).min(180.0);
         }
         if rl.is_key_down(KeyboardKey::KEY_X) {
-            pixels_per_unit = (pixels_per_unit * 0.98).max(20.0);
+            pixels_per_unit = (pixels_per_unit * 0.98).max(18.0);
         }
+        if inspect_mode {
+            pixels_per_unit = (pixels_per_unit * 1.03).min(320.0);
+        }
+
+        let forward_speed = dot(ship_velocity, forward);
+        let lateral_speed = dot(ship_velocity, right);
+        let ship_pitch_angle = (-forward_speed * 18.0).clamp(-18.0, 15.0);
+        let ship_bank_angle = (-lateral_speed * 28.0).clamp(-24.0, 24.0);
 
         if rl.is_key_pressed(KeyboardKey::KEY_ONE) {
             ship_world_pos = Vector3::new(0.0, star.radius + 0.9, -(star.radius + 2.6));
+            ship_velocity = Vector3::new(0.0, 0.0, 0.0);
             let (yaw, pitch) = look_angles(ship_world_pos, Vector3::new(0.0, 0.0, 0.0));
             cam_yaw = yaw;
             cam_pitch = pitch.clamp(-70.0, 70.0);
@@ -428,10 +586,41 @@ fn main() {
                     ship_world_pos = target
                         + outward * (body.radius + 2.2)
                         + Vector3::new(0.0, body.radius * 0.35 + 0.35, 0.0);
+                    ship_velocity = Vector3::new(0.0, 0.0, 0.0);
                     let (yaw, pitch) = look_angles(ship_world_pos, target);
                     cam_yaw = yaw;
                     cam_pitch = pitch.clamp(-70.0, 70.0);
                     rl.set_window_title(&thread, &format!("Snoopy Solar System — {}", body.name));
+                    warp_flash = 1.0;
+                }
+            }
+        }
+
+        for (idx, key) in MOON_WARP_KEYS.iter().enumerate() {
+            if rl.is_key_pressed(*key) {
+                if let Some(moon) = moons.get(idx) {
+                    if let Some(parent) = planets.get(moon.parent_index) {
+                        let theta = t * parent.orbit_speed;
+                        let parent_world = Vector3::new(
+                            parent.orbit_radius * theta.cos(),
+                            0.0,
+                            parent.orbit_radius * theta.sin(),
+                        );
+                        let target = parent_world
+                            + Vector3::new(
+                                moon.orbit_radius * moon.phase.cos(),
+                                0.0,
+                                moon.orbit_radius * moon.phase.sin(),
+                            );
+                        let outward = normalize_vec(target - parent_world);
+                        ship_world_pos = target + outward * (moon.radius + 0.3) + Vector3::new(0.0, 0.2, 0.0);
+                        ship_velocity = Vector3::new(0.0, 0.0, 0.0);
+                        let (yaw, pitch) = look_angles(ship_world_pos, target);
+                        cam_yaw = yaw;
+                        cam_pitch = pitch.clamp(-70.0, 70.0);
+                        rl.set_window_title(&thread, &format!("Snoopy Solar System — Luna {}", idx + 1));
+                        warp_flash = 1.0;
+                    }
                 }
             }
         }
@@ -439,7 +628,14 @@ fn main() {
         let cam_pos_world = if bird_eye {
             Vector3::new(ship_world_pos.x, bird_eye_height, ship_world_pos.z)
         } else {
-            ship_world_pos - forward * follow_distance + Vector3::new(0.0, 0.4, 0.0)
+            let mut trailing = (follow_distance + forward_speed * 0.12).clamp(1.5, 4.0);
+            if inspect_mode {
+                trailing = trailing.min(1.2);
+            }
+            let lift = 0.4 + ship_pitch_angle.abs() * 0.01 + if inspect_mode { 0.08 } else { 0.0 };
+            ship_world_pos - forward * trailing
+                + Vector3::new(0.0, lift, 0.0)
+                + right * (-lateral_speed * 0.05)
         };
 
         fb.clear();
@@ -788,83 +984,6 @@ fn main() {
             }
         }
 
-        if let Some(mesh) = &snoopy_mesh {
-            let rot = Vector3::new(0.0, cam_yaw, 0.0);
-            for f in &mesh.faces {
-                let w1 = rotate_xyz(mesh.vertices[f[0]] * snoopy_scale, rot) + ship_world_pos;
-                let w2 = rotate_xyz(mesh.vertices[f[1]] * snoopy_scale, rot) + ship_world_pos;
-                let w3 = rotate_xyz(mesh.vertices[f[2]] * snoopy_scale, rot) + ship_world_pos;
-                let (s1, s2, s3) = if bird_eye {
-                    (
-                        world_to_screen_top(
-                            w1,
-                            screen_center,
-                            cam_pos_world,
-                            pixels_per_unit,
-                            camera_distance,
-                        ),
-                        world_to_screen_top(
-                            w2,
-                            screen_center,
-                            cam_pos_world,
-                            pixels_per_unit,
-                            camera_distance,
-                        ),
-                        world_to_screen_top(
-                            w3,
-                            screen_center,
-                            cam_pos_world,
-                            pixels_per_unit,
-                            camera_distance,
-                        ),
-                    )
-                } else {
-                    (
-                        world_to_screen(
-                            w1,
-                            screen_center,
-                            cam_pos_world,
-                            pixels_per_unit,
-                            camera_distance,
-                            cam_yaw,
-                            cam_pitch,
-                        ),
-                        world_to_screen(
-                            w2,
-                            screen_center,
-                            cam_pos_world,
-                            pixels_per_unit,
-                            camera_distance,
-                            cam_yaw,
-                            cam_pitch,
-                        ),
-                        world_to_screen(
-                            w3,
-                            screen_center,
-                            cam_pos_world,
-                            pixels_per_unit,
-                            camera_distance,
-                            cam_yaw,
-                            cam_pitch,
-                        ),
-                    )
-                };
-                uniforms.pattern = 200;
-                uniforms.mode = 0;
-                crate::triangle::triangle_filled_world_no_depth(
-                    &mut fb,
-                    s1,
-                    s2,
-                    s3,
-                    w1,
-                    w2,
-                    w3,
-                    snoopy_color,
-                    &uniforms,
-                );
-            }
-        }
-
         for p in &planets {
             let mut prev: Option<Vector2> = None;
             let mut first: Option<Vector2> = None;
@@ -947,6 +1066,83 @@ fn main() {
             }
             if let (Some(first_pt), Some(last_pt)) = (first, prev) {
                 line::line(&mut fb, last_pt, first_pt);
+            }
+        }
+
+        if let Some(mesh) = &snoopy_mesh {
+            let rot = Vector3::new(180.0 + ship_pitch_angle, cam_yaw, ship_bank_angle);
+            for f in &mesh.faces {
+                let w1 = rotate_xyz(mesh.vertices[f[0]] * snoopy_scale, rot) + ship_world_pos;
+                let w2 = rotate_xyz(mesh.vertices[f[1]] * snoopy_scale, rot) + ship_world_pos;
+                let w3 = rotate_xyz(mesh.vertices[f[2]] * snoopy_scale, rot) + ship_world_pos;
+                let (s1, s2, s3) = if bird_eye {
+                    (
+                        world_to_screen_top(
+                            w1,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                        ),
+                        world_to_screen_top(
+                            w2,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                        ),
+                        world_to_screen_top(
+                            w3,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                        ),
+                    )
+                } else {
+                    (
+                        world_to_screen(
+                            w1,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                            cam_yaw,
+                            cam_pitch,
+                        ),
+                        world_to_screen(
+                            w2,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                            cam_yaw,
+                            cam_pitch,
+                        ),
+                        world_to_screen(
+                            w3,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                            cam_yaw,
+                            cam_pitch,
+                        ),
+                    )
+                };
+                uniforms.pattern = 999;
+                uniforms.mode = 0;
+                crate::triangle::triangle_filled_world_no_depth(
+                    &mut fb,
+                    s1,
+                    s2,
+                    s3,
+                    w1,
+                    w2,
+                    w3,
+                    snoopy_color,
+                    &uniforms,
+                );
             }
         }
 
