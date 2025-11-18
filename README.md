@@ -1,16 +1,23 @@
+<div align="center">
+
 # ‧₊˚✩ Snoopy Space Travel ✩˚₊‧
 
-<div align="center">
-	<iframe
-		width="460"
-		height="259"
-		src="https://www.youtube.com/embed/alGQAUomNLw?rel=0&modestbranding=1"
-		title="SpaceTravel demo"
-		frameborder="0"
-		allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-		allowfullscreen>
-	</iframe>
-	<p><a href="https://youtu.be/alGQAUomNLw" target="_blank">Ver demo completa en YouTube</a></p>
+[![Rust](https://img.shields.io/badge/Rust-1.75+-000000?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Cargo](https://img.shields.io/badge/Cargo-build-7E4C1E?style=for-the-badge&logo=rust&logoColor=white)](https://doc.rust-lang.org/cargo/)
+[![Raylib](https://img.shields.io/badge/raylib-5.5-34C759?style=for-the-badge&logo=raylib&logoColor=white)](https://www.raylib.com/)
+[![CPU Renderer](https://img.shields.io/badge/Render-CPU%20Software-FF69B4?style=for-the-badge)](#)
+
+<p align="center">
+  <a href="https://youtu.be/alGQAUomNLw" target="_blank">
+    <img
+      src="https://img.youtube.com/vi/alGQAUomNLw/hqdefault.jpg"
+      alt="Mini captura del video en YouTube"
+      width="420" />
+  </a>
+  <br />
+  <em>Haz clic en la miniatura para ver la demo completa</em>
+</p>
+
 </div>
 
 Un único ejecutable combina el tour del sistema solar con la nave de Snoopy. Todo el render ocurre en CPU usando nuestro framebuffer hecho a mano más una ventana de Raylib. 
@@ -18,13 +25,14 @@ Un único ejecutable combina el tour del sistema solar con la nave de Snoopy. To
 
 ## Galería
 
+Capturas del sistema solar:
 
-```markdown
-![Captura](docs/captura_sistema.png)
-![Foto de un lado](docs/captura_2.png)
-![Foto desde arriba ](docs/captura_3.png)
-![Mini Gif](docs/warp.gif)
-```
+<p align="center">
+  <img src="docs/captura_sistema.png" alt="Sistema completo" width="420" />
+  <img src="docs/captura_2.png" alt="Vista lateral del recorrido" width="420" />
+  <img src="docs/captura_3.png" alt="Vista cenital" width="420" />
+  <img src="docs/warp.gif" alt="Warp en acción (gif)" width="380" />
+</p>
 
 ## Cómo ejecutarlo
 
@@ -91,3 +99,4 @@ models/
 
 docs/               -> coloca aquí capturas y gifs referenciados en la galería
 ```
+
