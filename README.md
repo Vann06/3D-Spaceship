@@ -1,8 +1,30 @@
-# SpaceTravel — Sistema Solar de Snoopy
+# ‧₊˚✩ Snoopy Space Travel ✩˚₊‧
 
-[![Ver video (YouTube)](https://img.youtube.com/vi/ry4oAwbALA8/hqdefault.jpg)](https://youtu.be/ry4oAwbALA8)
+<div align="center">
+	<iframe
+		width="460"
+		height="259"
+		src="https://www.youtube.com/embed/alGQAUomNLw?rel=0&modestbranding=1"
+		title="SpaceTravel demo"
+		frameborder="0"
+		allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+		allowfullscreen>
+	</iframe>
+	<p><a href="https://youtu.be/alGQAUomNLw" target="_blank">Ver demo completa en YouTube</a></p>
+</div>
 
-Un único ejecutable combina el tour del sistema solar con la nave de Snoopy. Todo el render ocurre en CPU usando nuestro framebuffer hecho a mano más una ventana de Raylib. Los controles, las teclas de warp y la cámara replican BiancaCalderon/SpaceTravel para que la rúbrica se evalúe uno a uno.
+Un único ejecutable combina el tour del sistema solar con la nave de Snoopy. Todo el render ocurre en CPU usando nuestro framebuffer hecho a mano más una ventana de Raylib. 
+
+
+## Galería
+
+
+```markdown
+![Captura](docs/captura_sistema.png)
+![Foto de un lado](docs/captura_2.png)
+![Foto desde arriba ](docs/captura_3.png)
+![Mini Gif](docs/warp.gif)
+```
 
 ## Cómo ejecutarlo
 
@@ -52,20 +74,20 @@ El perfil `--release` mantiene 60–90 FPS en laptops medias.
 - ✅ Warp animado + flash visual para soles/planetas/lunas.
 - ✅ README en español con pasos claros, controles y secciones para video/capturas.
 
-## Galería
-
-Sitúa aquí tus capturas o gifs favoritos agregando los archivos al repositorio:
-
-```markdown
-![Sistema completo](docs/captura_sistema.png)
-![Warp cercano](docs/warp.gif)
-```
-
-(Reemplaza las rutas con tus propias imágenes cuando las tengas.)
 
 ## Estructura del repositorio
 
-- `src/main.rs`: punto de entrada con cámara, controles, lógica de warp, Snoopy y bucle del rasterizador.
-- `src/framebuffer.rs`, `src/triangle.rs`, `src/shader.rs`: núcleo del renderizador en software.
-- `src/obj_loader.rs`: carga y triangulación de OBJ (usada para Snoopy) con centrado automático.
-- `models/`: contiene `Snoopy.obj` y `Snoopy.mtl` listos para la build.
+```
+src/
+	main.rs           -> bucle principal, cámara, warp y Snoopy
+	framebuffer.rs    -> framebuffer en CPU + helpers de color
+	triangle.rs       -> rasterizador y barycentría en software
+	shader.rs         -> sombreadores estáticos y procedurales
+	obj_loader.rs     -> importador OBJ/MTL con centrado automático
+
+models/
+	Snoopy.obj        -> geometría de la nave
+	Snoopy.mtl        -> color base del modelo
+
+docs/               -> coloca aquí capturas y gifs referenciados en la galería
+```
