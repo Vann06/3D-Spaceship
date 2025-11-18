@@ -17,13 +17,16 @@ impl Mesh {
 
         for (lineno, line) in content.lines().enumerate() {
             let line = line.trim();
-            if line.is_empty() || line.starts_with('#') { continue; }
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
             let mut parts = line.split_whitespace();
             if let Some(tag) = parts.next() {
                 match tag {
                     "v" => {
                         // vertex position
-                        let coords: Vec<f32> = parts.filter_map(|p| p.parse::<f32>().ok()).collect();
+                        let coords: Vec<f32> =
+                            parts.filter_map(|p| p.parse::<f32>().ok()).collect();
                         if coords.len() >= 3 {
                             positions.push(Vector3::new(coords[0], coords[1], coords[2]));
                         }
@@ -32,15 +35,22 @@ impl Mesh {
                         // faces can be triangles, quads, or n-gons -> triangulate fan
                         let mut indices: Vec<usize> = Vec::new();
                         for p in parts {
-                            if p.is_empty() { continue; }
+                            if p.is_empty() {
+                                continue;
+                            }
                             // format variants: v, v/vt, v//vn, v/vt/vn
                             let first = p.split('/').next().unwrap_or("");
-                            if first.is_empty() { continue; }
-                            if let Ok(idx_raw) = first.parse::<isize>() { // OBJ allows negative indices
+                            if first.is_empty() {
+                                continue;
+                            }
+                            if let Ok(idx_raw) = first.parse::<isize>() {
+                                // OBJ allows negative indices
                                 let idx = if idx_raw < 0 {
                                     // negative indices are relative to end (current size + idx_raw + 1)
                                     (positions.len() as isize + idx_raw) as isize
-                                } else { idx_raw - 1 } as isize; // convert to 0-based
+                                } else {
+                                    idx_raw - 1
+                                } as isize; // convert to 0-based
                                 if idx < 0 || (idx as usize) >= positions.len() {
                                     // skip invalid index
                                     continue;
@@ -53,7 +63,10 @@ impl Mesh {
                                 faces.push([indices[0], indices[i], indices[i + 1]]);
                             }
                         } else if !indices.is_empty() {
-                            eprintln!("Warning: face with <3 vertices at line {} ignored", lineno + 1);
+                            eprintln!(
+                                "Warning: face with <3 vertices at line {} ignored",
+                                lineno + 1
+                            );
                         }
                     }
                     _ => { /* ignore other tags (vt, vn, usemtl, etc.) */ }
@@ -66,14 +79,30 @@ impl Mesh {
             let mut min = positions[0];
             let mut max = positions[0];
             for v in &positions {
-                if v.x < min.x { min.x = v.x; }
-                if v.y < min.y { min.y = v.y; }
-                if v.z < min.z { min.z = v.z; }
-                if v.x > max.x { max.x = v.x; }
-                if v.y > max.y { max.y = v.y; }
-                if v.z > max.z { max.z = v.z; }
+                if v.x < min.x {
+                    min.x = v.x;
+                }
+                if v.y < min.y {
+                    min.y = v.y;
+                }
+                if v.z < min.z {
+                    min.z = v.z;
+                }
+                if v.x > max.x {
+                    max.x = v.x;
+                }
+                if v.y > max.y {
+                    max.y = v.y;
+                }
+                if v.z > max.z {
+                    max.z = v.z;
+                }
             }
-            let center = Vector3::new((min.x + max.x) * 0.5, (min.y + max.y) * 0.5, (min.z + max.z) * 0.5);
+            let center = Vector3::new(
+                (min.x + max.x) * 0.5,
+                (min.y + max.y) * 0.5,
+                (min.z + max.z) * 0.5,
+            );
             for v in &mut positions {
                 v.x -= center.x;
                 v.y -= center.y;
@@ -81,6 +110,9 @@ impl Mesh {
             }
         }
 
-        Ok(Mesh { vertices: positions, faces })
+        Ok(Mesh {
+            vertices: positions,
+            faces,
+        })
     }
 }

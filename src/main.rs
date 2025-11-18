@@ -1,273 +1,955 @@
-// main.rs
-
 mod framebuffer;
-mod triangle;
 mod line;
 mod obj_loader;
 mod shader;
+mod triangle;
 
 use framebuffer::Framebuffer;
-use triangle::triangle;
 use obj_loader::Mesh;
-use shader::{Uniforms};
 use raylib::prelude::*;
-use std::thread;
-use std::time::Duration;
-use std::f32::consts::PI;
+use std::{f32::consts::PI, fs, path::Path};
 
-fn transform(vertex: Vector3, translation: Vector3, scale: f32, rotation: Vector3) -> Vector3 {
-    let (sin_x, cos_x) = (rotation.x * PI / 180.0).sin_cos();
-    let (sin_y, cos_y) = (rotation.y * PI / 180.0).sin_cos();
-    let (sin_z, cos_z) = (rotation.z * PI / 180.0).sin_cos();
-
-    let mut new_vertex = vertex;
-
-    // Rotate X
-    let rotated_y = new_vertex.y * cos_x - new_vertex.z * sin_x;
-    let rotated_z = new_vertex.y * sin_x + new_vertex.z * cos_x;
-    new_vertex.y = rotated_y;
-    new_vertex.z = rotated_z;
-
-    // Rotate Y
-    let rotated_x = new_vertex.x * cos_y + new_vertex.z * sin_y;
-    let rotated_z = -new_vertex.x * sin_y + new_vertex.z * cos_y;
-    new_vertex.x = rotated_x;
-    new_vertex.z = rotated_z;
-
-    // Rotate Z
-    let rotated_x = new_vertex.x * cos_z - new_vertex.y * sin_z;
-    let rotated_y = new_vertex.x * sin_z + new_vertex.y * cos_z;
-    new_vertex.x = rotated_x;
-    new_vertex.y = rotated_y;
-
-    // Perspective projection (very simple) parameters
-    // Move model away from camera
-    let camera_distance = 3.0_f32; // units in model space
-    let perspective = 1.0 / (1.0 + (new_vertex.z / camera_distance));
-
-    // Scale in model space first
-    new_vertex.x *= scale * perspective;
-    new_vertex.y *= scale * perspective;
-
-    // Translate to screen space
-    new_vertex.x += translation.x;
-    new_vertex.y += translation.y;
-
-    new_vertex
+#[derive(Clone)]
+struct Body {
+    name: &'static str,
+    radius: f32,
+    color: Vector3,
+    orbit_radius: f32,
+    orbit_speed: f32,
+    rotation_speed: f32,
+    mode: u32,
+    has_ring: bool,
 }
 
-fn render_cube(
-    framebuffer: &mut Framebuffer,
-    center: Vector3,
-    translation: Vector3,
-    scale: f32,
-    rotation: Vector3,
-) {
-    let v1 = Vector3::new(center.x - 0.5, center.y - 0.5, center.z - 0.5); 
-    let v2 = Vector3::new(center.x + 0.5, center.y - 0.5, center.z - 0.5);
-    let v3 = Vector3::new(center.x + 0.5, center.y + 0.5, center.z - 0.5);
-    let v4 = Vector3::new(center.x - 0.5, center.y + 0.5, center.z - 0.5);
-    let v5 = Vector3::new(center.x - 0.5, center.y - 0.5, center.z + 0.5);
-    let v6 = Vector3::new(center.x + 0.5, center.y - 0.5, center.z + 0.5);
-    let v7 = Vector3::new(center.x + 0.5, center.y + 0.5, center.z + 0.5);
-    let v8 = Vector3::new(center.x - 0.5, center.y + 0.5, center.z + 0.5);
+#[derive(Clone)]
+struct Moon {
+    parent_index: usize,
+    radius: f32,
+    orbit_radius: f32,
+    orbit_speed: f32,
+    phase: f32,
+    mode: u32,
+}
 
-    let t1 = transform(v1, translation, scale, rotation);
-    let t2 = transform(v2, translation, scale, rotation);
-    let t3 = transform(v3, translation, scale, rotation);
-    let t4 = transform(v4, translation, scale, rotation);
-    let t5 = transform(v5, translation, scale, rotation);
-    let t6 = transform(v6, translation, scale, rotation);
-    let t7 = transform(v7, translation, scale, rotation);
-    let t8 = transform(v8, translation, scale, rotation);
+fn normalize_vec(v: Vector3) -> Vector3 {
+    let len = (v.x * v.x + v.y * v.y + v.z * v.z).sqrt().max(1e-6);
+    Vector3::new(v.x / len, v.y / len, v.z / len)
+}
 
-    // Front face
-    triangle(framebuffer, t1, t2, t4);
-    triangle(framebuffer, t2, t3, t4);
+fn load_snoopy_color<P: AsRef<Path>>(path: P) -> Vector3 {
+    if let Ok(text) = fs::read_to_string(path) {
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("Kd ") {
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if parts.len() == 4 {
+                    if let (Ok(r), Ok(g), Ok(b)) = (
+                        parts[1].parse::<f32>(),
+                        parts[2].parse::<f32>(),
+                        parts[3].parse::<f32>(),
+                    ) {
+                        return Vector3::new(
+                            r.clamp(0.0, 1.0),
+                            g.clamp(0.0, 1.0),
+                            b.clamp(0.0, 1.0),
+                        );
+                    }
+                }
+            }
+        }
+    }
+    Vector3::new(1.0, 1.0, 1.0)
+}
 
-    // Back face
-    triangle(framebuffer, t5, t6, t8);
-    triangle(framebuffer, t6, t7, t8);
+fn generate_uv_sphere(stacks: u32, slices: u32, radius: f32) -> Mesh {
+    let mut vertices: Vec<Vector3> = Vec::new();
+    let mut faces: Vec<[usize; 3]> = Vec::new();
+    for i in 0..=stacks {
+        let v = i as f32 / stacks as f32;
+        let phi = v * PI;
+        for j in 0..=slices {
+            let u = j as f32 / slices as f32;
+            let theta = u * 2.0 * PI;
+            let x = theta.cos() * phi.sin();
+            let y = phi.cos();
+            let z = theta.sin() * phi.sin();
+            vertices.push(Vector3::new(x * radius, y * radius, z * radius));
+        }
+    }
+    let row = (slices + 1) as usize;
+    for i in 0..stacks as usize {
+        for j in 0..slices as usize {
+            let i0 = i * row + j;
+            let i1 = i * row + j + 1;
+            let i2 = (i + 1) * row + j;
+            let i3 = (i + 1) * row + j + 1;
+            faces.push([i0, i2, i1]);
+            faces.push([i1, i2, i3]);
+        }
+    }
+    Mesh { vertices, faces }
+}
 
-    // Right face
-    triangle(framebuffer, t2, t6, t3);
-    triangle(framebuffer, t6, t7, t3);
+fn rotate_xyz(vertex: Vector3, rotation_deg: Vector3) -> Vector3 {
+    let (sx, cx) = (
+        rotation_deg.x.to_radians().sin(),
+        rotation_deg.x.to_radians().cos(),
+    );
+    let (sy, cy) = (
+        rotation_deg.y.to_radians().sin(),
+        rotation_deg.y.to_radians().cos(),
+    );
+    let (sz, cz) = (
+        rotation_deg.z.to_radians().sin(),
+        rotation_deg.z.to_radians().cos(),
+    );
+    let mut v = vertex;
+    let ry = v.y * cx - v.z * sx;
+    let rz = v.y * sx + v.z * cx;
+    v.y = ry;
+    v.z = rz;
+    let rx = v.x * cy + v.z * sy;
+    let rz2 = -v.x * sy + v.z * cy;
+    v.x = rx;
+    v.z = rz2;
+    let rx2 = v.x * cz - v.y * sz;
+    let ry2 = v.x * sz + v.y * cz;
+    v.x = rx2;
+    v.y = ry2;
+    v
+}
 
-    // Left face
-    triangle(framebuffer, t1, t5, t4);
-    triangle(framebuffer, t5, t8, t4);
+fn world_to_screen(
+    world: Vector3,
+    screen_center: Vector2,
+    cam_pos_world: Vector3,
+    pixels_per_unit: f32,
+    camera_distance: f32,
+    cam_yaw_deg: f32,
+    cam_pitch_deg: f32,
+) -> Vector3 {
+    let rel = world - cam_pos_world;
+    let yaw = cam_yaw_deg.to_radians();
+    let pitch = cam_pitch_deg.to_radians();
+    let (sin_y, cos_y) = yaw.sin_cos();
+    let (sin_p, cos_p) = pitch.sin_cos();
+    let x_prime = rel.x * cos_y - rel.z * sin_y;
+    let z_prime = rel.x * sin_y + rel.z * cos_y;
+    let y_prime = rel.y;
+    let cam_y = y_prime * cos_p - z_prime * sin_p;
+    let cam_z = y_prime * sin_p + z_prime * cos_p;
+    let cam_x = x_prime;
+    let persp = camera_distance / (camera_distance + cam_z.max(0.01));
+    let sx = cam_x * pixels_per_unit * persp + screen_center.x;
+    let sy = cam_y * pixels_per_unit * persp + screen_center.y;
+    Vector3::new(sx, sy, cam_z)
+}
 
-    // Top face
-    triangle(framebuffer, t3, t7, t4);
-    triangle(framebuffer, t7, t8, t4);
+fn world_to_screen_top(
+    world: Vector3,
+    screen_center: Vector2,
+    cam_pos_world: Vector3,
+    pixels_per_unit: f32,
+    camera_distance: f32,
+) -> Vector3 {
+    let wx = world.x - cam_pos_world.x;
+    let wz = world.z - cam_pos_world.z;
+    let wy = world.y - cam_pos_world.y;
+    let persp = 1.0 / (1.0 + (wy / camera_distance));
+    let sx = wx * pixels_per_unit * persp + screen_center.x;
+    let sy = wz * pixels_per_unit * persp + screen_center.y;
+    Vector3::new(sx, sy, wy)
+}
 
-    // Bottom face
-    triangle(framebuffer, t1, t2, t5);
-    triangle(framebuffer, t2, t6, t5);
+fn body_position(body: &Body, time: f32) -> Vector3 {
+    let theta = time * body.orbit_speed;
+    Vector3::new(
+        body.orbit_radius * theta.cos(),
+        0.0,
+        body.orbit_radius * theta.sin(),
+    )
+}
+
+fn look_angles(from: Vector3, to: Vector3) -> (f32, f32) {
+    let dir = to - from;
+    let horiz = (dir.x * dir.x + dir.z * dir.z).sqrt().max(1e-5);
+    let yaw = dir.x.atan2(dir.z).to_degrees();
+    let pitch = dir.y.atan2(horiz).to_degrees();
+    (yaw, pitch)
 }
 
 fn main() {
-    let window_width = 800;
-    let window_height = 600;
-
-    let (mut window, raylib_thread) = raylib::init()
-        .size(window_width, window_height)
-        .title("Window Example")
-        .log_level(TraceLogLevel::LOG_WARNING)
+    let width = 1000;
+    let height = 800;
+    let (mut rl, thread) = raylib::init()
+        .size(width, height)
+        .title("Snoopy Solar System — Software Renderer")
         .build();
-
-    let mut framebuffer = Framebuffer::new(window_width as u32, window_height as u32);
-
-    // Load doghouse first, fallback to Snoopy (robust to current working directory)
-    let models_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("models");
-    let doghouse_path = models_dir.join("doghouse.obj");
-    let snoopy_path = models_dir.join("Snoopy.obj");
-    let chosen_path = if doghouse_path.exists() { &doghouse_path } else { &snoopy_path };
-    println!("Loading OBJ from: {}", chosen_path.display());
-    let mesh = match Mesh::load_obj(chosen_path) {
-        Ok(m) => m,
-        Err(e) => {
-            eprintln!("Failed to load OBJ: {e}");
-            return;
-        }
-    };
-    println!("Loaded mesh: {} vertices, {} triangles", mesh.vertices.len(), mesh.faces.len());
-
-    framebuffer.set_background_color(Color::new(50, 50, 100, 255));
-
-    let mut translation = Vector3::new(400.0, 300.0, 0.0); // screen center
-    let mut rotation_user = Vector3::new(0.0, 0.0, 0.0);
-    // Apply per-model orientation correction so meshes are upright
-    let model_rotation_offset: Vector3 = {
-        let name = chosen_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if name.eq_ignore_ascii_case("doghouse.obj") || name.eq_ignore_ascii_case("Snoopy.obj") {
-            Vector3::new(180.0, 0.0, 0.0) // flip X axis
-        } else {
-            Vector3::new(0.0, 0.0, 0.0)
-        }
-    };
-
-    // Auto-fit scale based on mesh bounding box (already centered in loader)
-    let mut max_len = 0.0f32;
-    for v in &mesh.vertices {
-        let len = (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();
-        if len > max_len { max_len = len; }
+    rl.set_target_fps(75);
+    unsafe {
+        raylib::ffi::SetTraceLogLevel(4);
     }
-    // Fit so model roughly fills 70% of min(window_width, window_height)
-    let target_pixels = (window_width.min(window_height) as f32) * 0.7;
-    let mut scale = if max_len > 0.0 { target_pixels / max_len } else { 100.0 };
-    // Allow user fine scaling with previous A/S keys
 
-    let mut show_cube = false; // toggle between cube and mesh
-    let mut filled = true;     // start with shader-filled by default
-    let mut pattern: u32 = 5;  // default to red gradient pattern (see shader.rs)
-    while !window.window_should_close() {
-        if window.is_key_pressed(KeyboardKey::KEY_C) {
-            show_cube = !show_cube;
+    let mut fb = Framebuffer::new(width as u32, height as u32);
+    fb.set_background_color(Color::new(5, 5, 20, 255));
+
+    let mut high_quality = false;
+    let mut sphere = generate_uv_sphere(16, 22, 1.0);
+
+    let star = Body {
+        name: "Sol",
+        radius: 0.75,
+        color: Vector3::new(1.0, 0.85, 0.3),
+        orbit_radius: 0.0,
+        orbit_speed: 0.0,
+        rotation_speed: 5.0,
+        mode: 0,
+        has_ring: false,
+    };
+    let planets = vec![
+        Body {
+            name: "Asteroide",
+            radius: 0.14,
+            color: Vector3::new(0.6, 0.55, 0.5),
+            orbit_radius: 1.8,
+            orbit_speed: 1.3,
+            rotation_speed: 32.0,
+            mode: 0,
+            has_ring: false,
+        },
+        Body {
+            name: "Planeta Rocoso",
+            radius: 0.2,
+            color: Vector3::new(0.8, 0.65, 0.5),
+            orbit_radius: 3.0,
+            orbit_speed: 1.0,
+            rotation_speed: 22.0,
+            mode: 0,
+            has_ring: false,
+        },
+        Body {
+            name: "Tierra",
+            radius: 0.24,
+            color: Vector3::new(0.2, 0.5, 1.0),
+            orbit_radius: 4.4,
+            orbit_speed: 0.78,
+            rotation_speed: 28.0,
+            mode: 4,
+            has_ring: false,
+        },
+        Body {
+            name: "Planeta Cristal",
+            radius: 0.28,
+            color: Vector3::new(0.65, 0.85, 1.0),
+            orbit_radius: 5.6,
+            orbit_speed: 0.62,
+            rotation_speed: 24.0,
+            mode: 4,
+            has_ring: true,
+        },
+        Body {
+            name: "Planeta Fuego",
+            radius: 0.32,
+            color: Vector3::new(0.95, 0.4, 0.18),
+            orbit_radius: 6.9,
+            orbit_speed: 0.55,
+            rotation_speed: 30.0,
+            mode: 3,
+            has_ring: false,
+        },
+        Body {
+            name: "Planeta Agua",
+            radius: 0.34,
+            color: Vector3::new(0.15, 0.8, 0.75),
+            orbit_radius: 8.2,
+            orbit_speed: 0.48,
+            rotation_speed: 18.0,
+            mode: 1,
+            has_ring: true,
+        },
+        Body {
+            name: "Planeta Nube",
+            radius: 0.30,
+            color: Vector3::new(0.6, 0.75, 0.95),
+            orbit_radius: 9.4,
+            orbit_speed: 0.42,
+            rotation_speed: 16.0,
+            mode: 2,
+            has_ring: false,
+        },
+    ];
+
+    let mut pixels_per_unit: f32 = 60.0;
+    let mut ship_world_pos = Vector3::new(0.0, 0.25, -7.0);
+    let screen_center = Vector2::new((width / 2) as f32, (height / 2) as f32);
+    let camera_distance = 3.0;
+    let mut bird_eye = false;
+    let bird_eye_height = 7.0f32;
+    let mut cam_yaw = 0.0f32;
+    let mut cam_pitch = -5.0f32;
+    let follow_distance = 2.8f32;
+
+    let t0 = std::time::Instant::now();
+
+    let models_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("models");
+    let snoopy_obj = models_dir.join("Snoopy.obj");
+    let snoopy_mtl = models_dir.join("Snoopy.mtl");
+    let snoopy_mesh = Mesh::load_obj(&snoopy_obj).ok();
+    let snoopy_scale: f32 = 0.35;
+    let snoopy_color = load_snoopy_color(snoopy_mtl);
+
+    let mut moons: Vec<Moon> = vec![
+        Moon {
+            parent_index: 1,
+            radius: 0.05,
+            orbit_radius: 0.38,
+            orbit_speed: 1.6,
+            phase: 0.0,
+            mode: 0,
+        },
+        Moon {
+            parent_index: 3,
+            radius: 0.07,
+            orbit_radius: 0.45,
+            orbit_speed: 1.4,
+            phase: 1.2,
+            mode: 4,
+        },
+    ];
+
+    let mut stars: Vec<(i32, i32, u8)> = Vec::new();
+    {
+        let mut seed = 1337u32;
+        let mut rnd = || {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            (seed >> 16) as u16
+        };
+        for _ in 0..800 {
+            let x = (rnd() as i32 % width).abs();
+            let y = (rnd() as i32 % height).abs();
+            let b = (rnd() % 155 + 100) as u8;
+            stars.push((x, y, b));
         }
-        if window.is_key_pressed(KeyboardKey::KEY_F) {
-            filled = !filled;
-        }
-    if window.is_key_pressed(KeyboardKey::KEY_ONE) { pattern = 0; }
-    if window.is_key_pressed(KeyboardKey::KEY_TWO) { pattern = 1; }
-    if window.is_key_pressed(KeyboardKey::KEY_THREE) { pattern = 2; }
-    if window.is_key_pressed(KeyboardKey::KEY_FOUR) { pattern = 3; }
-    if window.is_key_pressed(KeyboardKey::KEY_FIVE) { pattern = 4; }
-    if window.is_key_pressed(KeyboardKey::KEY_SIX) { pattern = 5; }
-        // New controls mapping:
-        // W = zoom in, S = zoom out
-        if window.is_key_down(KeyboardKey::KEY_W) { scale *= 1.02; }
-        if window.is_key_down(KeyboardKey::KEY_S) { scale *= 0.98; }
-        // Q = move right, E = move left
-        if window.is_key_down(KeyboardKey::KEY_Q) { translation.x += 2.0; }
-        if window.is_key_down(KeyboardKey::KEY_E) { translation.x -= 2.0; }
-        // A / D = rotate around Y
-    if window.is_key_down(KeyboardKey::KEY_A) { rotation_user.y -= 1.0; }
-    if window.is_key_down(KeyboardKey::KEY_D) { rotation_user.y += 1.0; }
-
-    framebuffer.clear();
-    framebuffer.set_current_color(Color::WHITE);
-
-    // uniforms (time in seconds and pattern)
-    let uniforms = Uniforms { time: window.get_time() as f32, pattern };
-
-        if show_cube {
-            let vertex = Vector3::new(0.0, 0.0, 0.0);
-            if filled {
-                // render cube faces filled
-                // Recompute transformed cube vertices
-                let hs = 0.5;
-                let raw = [
-                    Vector3::new(-hs, -hs, -hs), Vector3::new(hs, -hs, -hs), Vector3::new(hs, hs, -hs), Vector3::new(-hs, hs, -hs),
-                    Vector3::new(-hs, -hs, hs),  Vector3::new(hs, -hs, hs),  Vector3::new(hs, hs, hs),  Vector3::new(-hs, hs, hs),
-                ];
-                let tv: Vec<Vector3> = raw.iter().map(|&v| transform(v + vertex, translation, scale * 0.002, rotation_user)).collect();
-                let faces = [
-                    [0,1,3],[1,2,3], // front
-                    [4,5,7],[5,6,7], // back
-                    [1,5,2],[5,6,2], // right
-                    [0,4,3],[4,7,3], // left
-                    [2,6,3],[6,7,3], // top
-                    [0,1,4],[1,5,4], // bottom
-                ];
-                let base = Vector3::new(1.0, 1.0, 1.0);
-                for f in faces {
-                    crate::triangle::triangle_filled(&mut framebuffer, tv[f[0]], tv[f[1]], tv[f[2]], base, &uniforms);
-                }
-            } else {
-                render_cube(&mut framebuffer, vertex, translation, scale * 0.002, rotation_user);
-            }
-        } else {
-            if filled {
-                let base = Vector3::new(1.0, 1.0, 1.0);
-                // Combine user rotation with model-specific offset for the mesh
-                let rot_mesh = Vector3::new(
-                    rotation_user.x + model_rotation_offset.x,
-                    rotation_user.y + model_rotation_offset.y,
-                    rotation_user.z + model_rotation_offset.z,
-                );
-                for face in &mesh.faces {
-                    let v1 = transform(mesh.vertices[face[0]], translation, scale, rot_mesh);
-                    let v2 = transform(mesh.vertices[face[1]], translation, scale, rot_mesh);
-                    let v3 = transform(mesh.vertices[face[2]], translation, scale, rot_mesh);
-                    crate::triangle::triangle_filled(&mut framebuffer, v1, v2, v3, base, &uniforms);
-                }
-            } else {
-                // wireframe
-                let rot_mesh = Vector3::new(
-                    rotation_user.x + model_rotation_offset.x,
-                    rotation_user.y + model_rotation_offset.y,
-                    rotation_user.z + model_rotation_offset.z,
-                );
-                for face in &mesh.faces {
-                    let v1 = transform(mesh.vertices[face[0]], translation, scale, rot_mesh);
-                    let v2 = transform(mesh.vertices[face[1]], translation, scale, rot_mesh);
-                    let v3 = transform(mesh.vertices[face[2]], translation, scale, rot_mesh);
-                    triangle(&mut framebuffer, v1, v2, v3);
-                }
-            }
-        }
-
-        framebuffer.swap_buffers(&mut window, &raylib_thread);
-
-        thread::sleep(Duration::from_millis(16));
     }
-}
 
-fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
-    // h in [0,1), s,v in [0,1]
-    let h6 = (h * 6.0).fract();
-    let i = (h * 6.0).floor() as i32;
-    let f = h6;
-    let p = v * (1.0 - s);
-    let q = v * (1.0 - s * f);
-    let t = v * (1.0 - s * (1.0 - f));
-    match i.rem_euclid(6) {
-        0 => (v, t, p),
-        1 => (q, v, p),
-        2 => (p, v, t),
-        3 => (p, q, v),
-        4 => (t, p, v),
-        _ => (v, p, q),
+    const PLANET_WARP_KEYS: [KeyboardKey; 7] = [
+        KeyboardKey::KEY_TWO,
+        KeyboardKey::KEY_THREE,
+        KeyboardKey::KEY_FOUR,
+        KeyboardKey::KEY_FIVE,
+        KeyboardKey::KEY_SIX,
+        KeyboardKey::KEY_SEVEN,
+        KeyboardKey::KEY_EIGHT,
+    ];
+
+    while !rl.window_should_close() {
+        let t = t0.elapsed().as_secs_f32();
+        let dt = rl.get_frame_time().max(1.0 / 240.0);
+
+        if rl.is_key_pressed(KeyboardKey::KEY_B) {
+            bird_eye = !bird_eye;
+        }
+        if rl.is_key_pressed(KeyboardKey::KEY_P) {
+            high_quality = !high_quality;
+            sphere = if high_quality {
+                generate_uv_sphere(28, 40, 1.0)
+            } else {
+                generate_uv_sphere(16, 22, 1.0)
+            };
+        }
+
+        let rot_speed = 65.0 * dt;
+        if rl.is_key_down(KeyboardKey::KEY_LEFT) {
+            cam_yaw -= rot_speed;
+        }
+        if rl.is_key_down(KeyboardKey::KEY_RIGHT) {
+            cam_yaw += rot_speed;
+        }
+        if rl.is_key_down(KeyboardKey::KEY_UP) {
+            cam_pitch = (cam_pitch + rot_speed).clamp(-70.0, 70.0);
+        }
+        if rl.is_key_down(KeyboardKey::KEY_DOWN) {
+            cam_pitch = (cam_pitch - rot_speed).clamp(-70.0, 70.0);
+        }
+
+        let yaw_rad = cam_yaw.to_radians();
+        let pitch_rad = cam_pitch.to_radians();
+        let forward = Vector3::new(
+            yaw_rad.sin() * pitch_rad.cos(),
+            pitch_rad.sin(),
+            yaw_rad.cos() * pitch_rad.cos(),
+        );
+        let right = normalize_vec(Vector3::new(forward.z, 0.0, -forward.x));
+        let up = Vector3::new(0.0, 1.0, 0.0);
+
+        let move_speed = 3.8 * dt;
+        if rl.is_key_down(KeyboardKey::KEY_W) {
+            ship_world_pos += forward * move_speed;
+        }
+        if rl.is_key_down(KeyboardKey::KEY_S) {
+            ship_world_pos -= forward * move_speed;
+        }
+        if rl.is_key_down(KeyboardKey::KEY_A) {
+            ship_world_pos -= right * move_speed;
+        }
+        if rl.is_key_down(KeyboardKey::KEY_D) {
+            ship_world_pos += right * move_speed;
+        }
+        if rl.is_key_down(KeyboardKey::KEY_Q) {
+            ship_world_pos += up * move_speed;
+        }
+        if rl.is_key_down(KeyboardKey::KEY_E) {
+            ship_world_pos -= up * move_speed;
+        }
+        if rl.is_key_down(KeyboardKey::KEY_Z) {
+            pixels_per_unit = (pixels_per_unit * 1.02).min(140.0);
+        }
+        if rl.is_key_down(KeyboardKey::KEY_X) {
+            pixels_per_unit = (pixels_per_unit * 0.98).max(20.0);
+        }
+
+        if rl.is_key_pressed(KeyboardKey::KEY_ONE) {
+            ship_world_pos = Vector3::new(0.0, star.radius + 0.9, -(star.radius + 2.6));
+            let (yaw, pitch) = look_angles(ship_world_pos, Vector3::new(0.0, 0.0, 0.0));
+            cam_yaw = yaw;
+            cam_pitch = pitch.clamp(-70.0, 70.0);
+            rl.set_window_title(&thread, &format!("Snoopy Solar System — {}", star.name));
+        }
+
+        for (idx, key) in PLANET_WARP_KEYS.iter().enumerate() {
+            if rl.is_key_pressed(*key) {
+                if let Some(body) = planets.get(idx) {
+                    let target = body_position(body, t);
+                    let outward = if target.x.abs() < 1e-3 && target.z.abs() < 1e-3 {
+                        Vector3::new(0.0, 0.0, -1.0)
+                    } else {
+                        normalize_vec(Vector3::new(target.x, 0.0, target.z))
+                    };
+                    ship_world_pos = target
+                        + outward * (body.radius + 2.2)
+                        + Vector3::new(0.0, body.radius * 0.35 + 0.35, 0.0);
+                    let (yaw, pitch) = look_angles(ship_world_pos, target);
+                    cam_yaw = yaw;
+                    cam_pitch = pitch.clamp(-70.0, 70.0);
+                    rl.set_window_title(&thread, &format!("Snoopy Solar System — {}", body.name));
+                }
+            }
+        }
+
+        let cam_pos_world = if bird_eye {
+            Vector3::new(ship_world_pos.x, bird_eye_height, ship_world_pos.z)
+        } else {
+            ship_world_pos - forward * follow_distance + Vector3::new(0.0, 0.4, 0.0)
+        };
+
+        fb.clear();
+        for (x, y, b) in &stars {
+            fb.set_current_color(Color::new(*b, *b, *b, 255));
+            fb.set_pixel(*x as u32, *y as u32);
+        }
+        fb.set_current_color(Color::WHITE);
+
+        let mut uniforms = shader::Uniforms {
+            time: rl.get_time() as f32,
+            pattern: 5,
+            mode: 0,
+            light_dir: Vector3::new(0.6, 0.7, 0.2),
+            camera_pos: cam_pos_world,
+            ring_inner: 0.0,
+            ring_outer: 0.0,
+            ring_enabled: false,
+            ring_center: Vector3::new(0.0, 0.0, 0.0),
+            performance_mode: !high_quality,
+        };
+
+        let star_rot = Vector3::new(0.0, t * star.rotation_speed, 0.0);
+        uniforms.pattern = 100;
+        for f in &sphere.faces {
+            let w1 = rotate_xyz(sphere.vertices[f[0]] * star.radius, star_rot);
+            let w2 = rotate_xyz(sphere.vertices[f[1]] * star.radius, star_rot);
+            let w3 = rotate_xyz(sphere.vertices[f[2]] * star.radius, star_rot);
+            let (s1, s2, s3) = if bird_eye {
+                (
+                    world_to_screen_top(
+                        w1,
+                        screen_center,
+                        cam_pos_world,
+                        pixels_per_unit,
+                        camera_distance,
+                    ),
+                    world_to_screen_top(
+                        w2,
+                        screen_center,
+                        cam_pos_world,
+                        pixels_per_unit,
+                        camera_distance,
+                    ),
+                    world_to_screen_top(
+                        w3,
+                        screen_center,
+                        cam_pos_world,
+                        pixels_per_unit,
+                        camera_distance,
+                    ),
+                )
+            } else {
+                (
+                    world_to_screen(
+                        w1,
+                        screen_center,
+                        cam_pos_world,
+                        pixels_per_unit,
+                        camera_distance,
+                        cam_yaw,
+                        cam_pitch,
+                    ),
+                    world_to_screen(
+                        w2,
+                        screen_center,
+                        cam_pos_world,
+                        pixels_per_unit,
+                        camera_distance,
+                        cam_yaw,
+                        cam_pitch,
+                    ),
+                    world_to_screen(
+                        w3,
+                        screen_center,
+                        cam_pos_world,
+                        pixels_per_unit,
+                        camera_distance,
+                        cam_yaw,
+                        cam_pitch,
+                    ),
+                )
+            };
+            crate::triangle::triangle_filled_world(
+                &mut fb, s1, s2, s3, w1, w2, w3, star.color, &uniforms,
+            );
+        }
+
+        for p in planets.iter() {
+            let theta = t * p.orbit_speed;
+            let pos_world = Vector3::new(
+                p.orbit_radius * theta.cos(),
+                0.0,
+                p.orbit_radius * theta.sin(),
+            );
+            let rot = Vector3::new(0.0, t * p.rotation_speed, 0.0);
+            uniforms.pattern = 200;
+            uniforms.mode = p.mode;
+            if p.has_ring {
+                uniforms.ring_enabled = true;
+                uniforms.ring_center = pos_world;
+                uniforms.ring_inner = p.radius * 1.6;
+                uniforms.ring_outer = p.radius * 2.6;
+            } else {
+                uniforms.ring_enabled = false;
+            }
+            for f in &sphere.faces {
+                let w1 = rotate_xyz(sphere.vertices[f[0]] * p.radius, rot) + pos_world;
+                let w2 = rotate_xyz(sphere.vertices[f[1]] * p.radius, rot) + pos_world;
+                let w3 = rotate_xyz(sphere.vertices[f[2]] * p.radius, rot) + pos_world;
+                let (s1, s2, s3) = if bird_eye {
+                    (
+                        world_to_screen_top(
+                            w1,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                        ),
+                        world_to_screen_top(
+                            w2,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                        ),
+                        world_to_screen_top(
+                            w3,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                        ),
+                    )
+                } else {
+                    (
+                        world_to_screen(
+                            w1,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                            cam_yaw,
+                            cam_pitch,
+                        ),
+                        world_to_screen(
+                            w2,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                            cam_yaw,
+                            cam_pitch,
+                        ),
+                        world_to_screen(
+                            w3,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                            cam_yaw,
+                            cam_pitch,
+                        ),
+                    )
+                };
+                crate::triangle::triangle_filled_world(
+                    &mut fb, s1, s2, s3, w1, w2, w3, p.color, &uniforms,
+                );
+            }
+            if p.has_ring {
+                uniforms.ring_enabled = true;
+                uniforms.ring_center = pos_world;
+                uniforms.ring_inner = p.radius * 3.0;
+                uniforms.ring_outer = p.radius * 3.8;
+                for f in &sphere.faces {
+                    let w1 = rotate_xyz(sphere.vertices[f[0]] * p.radius, rot) + pos_world;
+                    let w2 = rotate_xyz(sphere.vertices[f[1]] * p.radius, rot) + pos_world;
+                    let w3 = rotate_xyz(sphere.vertices[f[2]] * p.radius, rot) + pos_world;
+                    let (s1, s2, s3) = if bird_eye {
+                        (
+                            world_to_screen_top(
+                                w1,
+                                screen_center,
+                                cam_pos_world,
+                                pixels_per_unit,
+                                camera_distance,
+                            ),
+                            world_to_screen_top(
+                                w2,
+                                screen_center,
+                                cam_pos_world,
+                                pixels_per_unit,
+                                camera_distance,
+                            ),
+                            world_to_screen_top(
+                                w3,
+                                screen_center,
+                                cam_pos_world,
+                                pixels_per_unit,
+                                camera_distance,
+                            ),
+                        )
+                    } else {
+                        (
+                            world_to_screen(
+                                w1,
+                                screen_center,
+                                cam_pos_world,
+                                pixels_per_unit,
+                                camera_distance,
+                                cam_yaw,
+                                cam_pitch,
+                            ),
+                            world_to_screen(
+                                w2,
+                                screen_center,
+                                cam_pos_world,
+                                pixels_per_unit,
+                                camera_distance,
+                                cam_yaw,
+                                cam_pitch,
+                            ),
+                            world_to_screen(
+                                w3,
+                                screen_center,
+                                cam_pos_world,
+                                pixels_per_unit,
+                                camera_distance,
+                                cam_yaw,
+                                cam_pitch,
+                            ),
+                        )
+                    };
+                    crate::triangle::triangle_filled_world(
+                        &mut fb,
+                        s1,
+                        s2,
+                        s3,
+                        w1,
+                        w2,
+                        w3,
+                        p.color * 0.6,
+                        &uniforms,
+                    );
+                }
+            }
+        }
+
+        for m in &mut moons {
+            m.phase += m.orbit_speed * dt;
+            let parent = &planets[m.parent_index];
+            let theta = t * parent.orbit_speed;
+            let parent_world = Vector3::new(
+                parent.orbit_radius * theta.cos(),
+                0.0,
+                parent.orbit_radius * theta.sin(),
+            );
+            let moon_pos = parent_world
+                + Vector3::new(
+                    m.orbit_radius * m.phase.cos(),
+                    0.0,
+                    m.orbit_radius * m.phase.sin(),
+                );
+            uniforms.pattern = 200;
+            uniforms.mode = m.mode;
+            uniforms.performance_mode = !high_quality;
+            for f in &sphere.faces {
+                let w1 = rotate_xyz(
+                    sphere.vertices[f[0]] * m.radius,
+                    Vector3::new(0.0, t * 40.0, 0.0),
+                ) + moon_pos;
+                let w2 = rotate_xyz(
+                    sphere.vertices[f[1]] * m.radius,
+                    Vector3::new(0.0, t * 40.0, 0.0),
+                ) + moon_pos;
+                let w3 = rotate_xyz(
+                    sphere.vertices[f[2]] * m.radius,
+                    Vector3::new(0.0, t * 40.0, 0.0),
+                ) + moon_pos;
+                let (s1, s2, s3) = if bird_eye {
+                    (
+                        world_to_screen_top(
+                            w1,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                        ),
+                        world_to_screen_top(
+                            w2,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                        ),
+                        world_to_screen_top(
+                            w3,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                        ),
+                    )
+                } else {
+                    (
+                        world_to_screen(
+                            w1,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                            cam_yaw,
+                            cam_pitch,
+                        ),
+                        world_to_screen(
+                            w2,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                            cam_yaw,
+                            cam_pitch,
+                        ),
+                        world_to_screen(
+                            w3,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                            cam_yaw,
+                            cam_pitch,
+                        ),
+                    )
+                };
+                crate::triangle::triangle_filled_world(
+                    &mut fb,
+                    s1,
+                    s2,
+                    s3,
+                    w1,
+                    w2,
+                    w3,
+                    Vector3::new(0.8, 0.8, 0.85),
+                    &uniforms,
+                );
+            }
+        }
+
+        if let Some(mesh) = &snoopy_mesh {
+            let rot = Vector3::new(0.0, cam_yaw, 0.0);
+            for f in &mesh.faces {
+                let w1 = rotate_xyz(mesh.vertices[f[0]] * snoopy_scale, rot) + ship_world_pos;
+                let w2 = rotate_xyz(mesh.vertices[f[1]] * snoopy_scale, rot) + ship_world_pos;
+                let w3 = rotate_xyz(mesh.vertices[f[2]] * snoopy_scale, rot) + ship_world_pos;
+                let (s1, s2, s3) = if bird_eye {
+                    (
+                        world_to_screen_top(
+                            w1,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                        ),
+                        world_to_screen_top(
+                            w2,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                        ),
+                        world_to_screen_top(
+                            w3,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                        ),
+                    )
+                } else {
+                    (
+                        world_to_screen(
+                            w1,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                            cam_yaw,
+                            cam_pitch,
+                        ),
+                        world_to_screen(
+                            w2,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                            cam_yaw,
+                            cam_pitch,
+                        ),
+                        world_to_screen(
+                            w3,
+                            screen_center,
+                            cam_pos_world,
+                            pixels_per_unit,
+                            camera_distance,
+                            cam_yaw,
+                            cam_pitch,
+                        ),
+                    )
+                };
+                uniforms.pattern = 200;
+                uniforms.mode = 0;
+                crate::triangle::triangle_filled_world_no_depth(
+                    &mut fb,
+                    s1,
+                    s2,
+                    s3,
+                    w1,
+                    w2,
+                    w3,
+                    snoopy_color,
+                    &uniforms,
+                );
+            }
+        }
+
+        for p in &planets {
+            let mut prev: Option<Vector2> = None;
+            let mut first: Option<Vector2> = None;
+            for i in 0..=120 {
+                let ang = i as f32 / 120.0 * 2.0 * PI;
+                let world_pt =
+                    Vector3::new(p.orbit_radius * ang.cos(), 0.0, p.orbit_radius * ang.sin());
+                let proj = if bird_eye {
+                    world_to_screen_top(
+                        world_pt,
+                        screen_center,
+                        cam_pos_world,
+                        pixels_per_unit,
+                        camera_distance,
+                    )
+                } else {
+                    world_to_screen(
+                        world_pt,
+                        screen_center,
+                        cam_pos_world,
+                        pixels_per_unit,
+                        camera_distance,
+                        cam_yaw,
+                        cam_pitch,
+                    )
+                };
+                let screen_pt = Vector2::new(proj.x, proj.y);
+                if let Some(prev_pt) = prev {
+                    line::line(&mut fb, prev_pt, screen_pt);
+                } else {
+                    first = Some(screen_pt);
+                }
+                prev = Some(screen_pt);
+            }
+            if let (Some(first_pt), Some(last_pt)) = (first, prev) {
+                line::line(&mut fb, last_pt, first_pt);
+            }
+        }
+
+        for m in &moons {
+            let parent = &planets[m.parent_index];
+            let theta = t * parent.orbit_speed;
+            let parent_world = Vector3::new(
+                parent.orbit_radius * theta.cos(),
+                0.0,
+                parent.orbit_radius * theta.sin(),
+            );
+            let mut prev: Option<Vector2> = None;
+            let mut first: Option<Vector2> = None;
+            for i in 0..=60 {
+                let ang = i as f32 / 60.0 * 2.0 * PI;
+                let world_pt = parent_world
+                    + Vector3::new(m.orbit_radius * ang.cos(), 0.0, m.orbit_radius * ang.sin());
+                let proj = if bird_eye {
+                    world_to_screen_top(
+                        world_pt,
+                        screen_center,
+                        cam_pos_world,
+                        pixels_per_unit,
+                        camera_distance,
+                    )
+                } else {
+                    world_to_screen(
+                        world_pt,
+                        screen_center,
+                        cam_pos_world,
+                        pixels_per_unit,
+                        camera_distance,
+                        cam_yaw,
+                        cam_pitch,
+                    )
+                };
+                let screen_pt = Vector2::new(proj.x, proj.y);
+                if let Some(prev_pt) = prev {
+                    line::line(&mut fb, prev_pt, screen_pt);
+                } else {
+                    first = Some(screen_pt);
+                }
+                prev = Some(screen_pt);
+            }
+            if let (Some(first_pt), Some(last_pt)) = (first, prev) {
+                line::line(&mut fb, last_pt, first_pt);
+            }
+        }
+
+        fb.swap_buffers(&mut rl, &thread);
     }
 }

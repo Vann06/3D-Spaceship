@@ -23,13 +23,15 @@ impl Framebuffer {
     }
 
     pub fn clear(&mut self) {
-        self.color_buffer = Image::gen_image_color(self.width as i32, self.height as i32, self.background_color);
+        self.color_buffer =
+            Image::gen_image_color(self.width as i32, self.height as i32, self.background_color);
         self.depth_buffer.fill(f32::INFINITY);
     }
 
     pub fn set_pixel(&mut self, x: u32, y: u32) {
         if x < self.width && y < self.height {
-            self.color_buffer.draw_pixel(x as i32, y as i32, self.current_color);
+            self.color_buffer
+                .draw_pixel(x as i32, y as i32, self.current_color);
         }
     }
 
@@ -48,10 +50,14 @@ impl Framebuffer {
     }
 
     #[inline]
-    pub fn depth_index(&self, x: u32, y: u32) -> usize { (y as usize) * (self.width as usize) + (x as usize) }
+    pub fn depth_index(&self, x: u32, y: u32) -> usize {
+        (y as usize) * (self.width as usize) + (x as usize)
+    }
 
     pub fn test_and_set_depth(&mut self, x: u32, y: u32, depth: f32) -> bool {
-        if x >= self.width || y >= self.height { return false; }
+        if x >= self.width || y >= self.height {
+            return false;
+        }
         let idx = self.depth_index(x, y);
         if depth < self.depth_buffer[idx] {
             self.depth_buffer[idx] = depth;
@@ -65,18 +71,13 @@ impl Framebuffer {
         self.color_buffer.export_image(file_path);
     }
 
-    pub fn swap_buffers(
-        &self,
-        window: &mut RaylibHandle,
-        raylib_thread: &RaylibThread,
-    ) {
+    pub fn swap_buffers(&self, window: &mut RaylibHandle, raylib_thread: &RaylibThread) {
         // we get the "new" data from the new buffer into texture
         if let Ok(texture) = window.load_texture_from_image(raylib_thread, &self.color_buffer) {
-
             // the window currently has the "old" data (previous frame)
             let mut renderer = window.begin_drawing(raylib_thread);
 
-            // we move the "new" data to the window (current frame) 
+            // we move the "new" data to the window (current frame)
             renderer.draw_texture(&texture, 0, 0, Color::WHITE);
         }
     }
